@@ -1,7 +1,7 @@
 例の検定，割と簡単に作れそうなのでチョット仕様をまとめてみた
 
 1: 何をしているのかをコメントアウトで書いてもらう
-2: GW190412のイベントの前の背景ノイズのq-transformed energyを計算する(GWPyのq-gram moduleを使う．4096秒間のうち，off-sourceな部分200箇所をランダムに選ぶ?)
+2: GW190412のイベントの前の背景ノイズのq-transformed energyを計算する(GWPyのq-gram moduleを使う．4096秒間のうち，off-sourceな部分200箇所を等間隔に選ぶ?)
 3: 論文 Residual Test for the Third Gravitational-Wave Transient Catalog.pdfをベースにKSテスト(scipyのkstestモジュール)，ADテスト，カイ二乗検定をやってみる
 
 ---
