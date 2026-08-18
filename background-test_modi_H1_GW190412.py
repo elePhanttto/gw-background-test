@@ -1,4 +1,5 @@
 #小さい値を一定の値に固定するバージョン
+#タイルのエネルギーに時間相関があることから，間引いています
 
 from gwpy.timeseries import TimeSeries
 from scipy import stats
@@ -128,9 +129,12 @@ def kai2jou(f_obs,f_exp): #カイ二乗検定の統計量を直接計算
 # まず1つ目のセグメントでタイル数を確認
 _seg0 = white.crop(random_time[0], random_time[0] + 1.0)
 _qg0 = _seg0.q_gram(qrange=[8, 8], frange=[30.0, 500.0], snrthresh=0)
-N_tiles = len(_qg0["energy"])
+t_tile = np.asarray(_qg0["time"])
+e_tile = np.asarray(_qg0["energy"])
+order = np.argsort(t_tile)
+y = e_tile[order][::4]
+N_tiles = len(y)
 print(f"帰無分布を構築中（N={N_tiles}, n_sim=1e+6）...")
-
 A2_null = build_ad_null_distribution(N_tiles, n_sim=int(1e+6))
 print(f"帰無分布の中央値: {np.median(A2_null):.3f}, 99%点: {np.percentile(A2_null, 99):.3f}")
 
@@ -138,7 +142,12 @@ for j in range(len(random_time)):
     seg = white.crop(random_time[j],random_time[j] + 1.0) #切り出し
     qgram_H1 = seg.q_gram(qrange=[8, 8], frange=[30.0, 500.0], snrthresh=0) #q-gramでq-transform
     y_H1 = np.asarray(qgram_H1["energy"]) #エネルギーの部分を取り出す
-    y_norm = y_H1 / y_H1.mean() #正規化
+    # 時間順にソートしてから等間隔間引き
+    t_tile = np.asarray(qgram_H1["time"])
+    e_tile = np.asarray(qgram_H1["energy"])
+    order = np.argsort(t_tile)
+    y = e_tile[order][::4]        # 1/4に間引く(時間方向に相関があるため)
+    y_norm = y / y.mean()
     all_y.append(y_norm)
     print(f"タイル数: {len(y_norm)}")
     obs, exp = Y_distribution_equiprob(y_norm,n_bins=9)
@@ -227,7 +236,7 @@ ad_pvalues = np.array(adlist)
 
 plt.figure(figsize=(10, 5))
 plt.scatter(time_offsets, ad_pvalues, s=15)
-plt.axhline(1e-6, linestyle="--", label="p = 1e-8")
+plt.axhline(1e-6, linestyle="--", label="p = 1e-6")
 plt.xlabel("Time from GW190412 geocent time [s]")
 plt.ylabel("AD test p-value")
 plt.title("Anderson-Darling test p-value vs time")
@@ -243,6 +252,7 @@ plt.figure(figsize=(8,5))
 plt.hist(np.log10(ks_pvalues), bins=30, alpha=0.7)
 plt.xlabel("log10(p-value)")
 plt.ylabel("count")
+plt.xlim((-8,0))
 plt.title("KS p-value distribution")
 plt.savefig(output4)
 

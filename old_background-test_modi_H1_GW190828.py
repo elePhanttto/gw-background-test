@@ -1,3 +1,5 @@
+#間引き前．小さいp値が多めにでるため，このコードは使わないことをおすすめします
+
 from gwpy.timeseries import TimeSeries
 from scipy import stats
 import numpy as np
@@ -6,14 +8,14 @@ from random import *
 import math
 
 event = "GW190828_063405_" #イベント名
-output1 = event + "kstest_L1.png" #ksテスト
-output2 = event + "chi2test_L1.png" #アウトプットのファイル
-output3 = event + "adtest_L1.png" #adテスト
-output4 = event + "pvalue_hist_L1.png" #histgram
-output5 = event + "dist_check_L1.png" #分布の比較
-output6 = event + "ratio_L1.txt" #裾の部分の定量化
-output7 = event + "tile_energy_L1.png" #タイルのエネルギー
-output8 = event + "a2_L1.png" #A2自体のプロット
+output1 = event + "kstest_H1.png" #ksテスト
+output2 = event + "chi2test_H1.png" #アウトプットのファイル
+output3 = event + "adtest_H1.png" #adテスト
+output4 = event + "pvalue_hist_H1.png" #histgram
+output5 = event + "dist_check_H1.png" #分布の比較
+output6 = event + "ratio_H1.txt" #裾の部分の定量化
+output7 = event + "tile_energy_H1.png" #タイルのエネルギー
+output8 = event + "a2_H1.png" #A2自体のプロット
 
 geocent_time = 1251009263.7 #ここではGW190828_063405の合体時刻!
 exclude_time = 11 #除外する前後の区間
@@ -39,18 +41,18 @@ for j in range(0,100):
     second = n * j + (geocent_time + exclude_time)
     random_time.append(second)
 
-data_L1 = TimeSeries.read("L-L1_GWOSC_4KHZ_R1-1251007216-4096.hdf5",format="hdf5.gwosc") #gwoscからデータを入れておいてください!
+data_H1 = TimeSeries.read("H-H1_GWOSC_4KHZ_R1-1251007216-4096.hdf5",format="hdf5.gwosc") #gwoscからデータを入れておいてください!
 
 # NaNのない範囲を特定
-valid = ~np.isnan(data_L1.value)
+valid = ~np.isnan(data_H1.value)
 if not valid.all():
-    times = data_L1.times.value
+    times = data_H1.times.value
     valid_times = times[valid]
     t_start, t_end = valid_times.min(), valid_times.max()
     print(f"⚠️ 有効区間: {t_start:.1f} - {t_end:.1f} ({t_end-t_start:.0f}秒)")
     
     # 有効区間だけ切り出す（端に少し余裕を持たせる）
-    data_L1 = data_L1.crop(t_start, t_end)
+    data_H1 = data_H1.crop(t_start, t_end)
     
     # 候補時刻も有効区間内に絞る
     margin = 8.0
@@ -58,7 +60,7 @@ if not valid.all():
                    if (t_start + margin) < t and (t + 1.0) < (t_end - margin)]
     print(f"有効な候補数: {len(random_time)}")
 
-white = data_L1.whiten(fftlength=4, overlap=2) #ホワイトニング
+white = data_H1.whiten(fftlength=4, overlap=2) #ホワイトニング
 
 # ============================================
 # AD検定の実装（論文式3.4準拠）
@@ -134,9 +136,9 @@ print(f"帰無分布の中央値: {np.median(A2_null):.3f}, 99%点: {np.percenti
 
 for j in range(len(random_time)):
     seg = white.crop(random_time[j],random_time[j] + 1.0) #切り出し
-    qgram_L1 = seg.q_gram(qrange=[8, 8], frange=[30.0, 500.0], snrthresh=0) #q-gramでq-transform
-    y_L1 = np.asarray(qgram_L1["energy"]) #エネルギーの部分を取り出す
-    y_norm = y_L1 / y_L1.mean() #正規化
+    qgram_H1 = seg.q_gram(qrange=[8, 8], frange=[30.0, 500.0], snrthresh=0) #q-gramでq-transform
+    y_H1 = np.asarray(qgram_H1["energy"]) #エネルギーの部分を取り出す
+    y_norm = y_H1 / y_H1.mean() #正規化
     all_y.append(y_norm)
     print(f"タイル数: {len(y_norm)}")
     obs, exp = Y_distribution_equiprob(y_norm,n_bins=9)
@@ -164,8 +166,8 @@ print(f"NaNでスキップしたセグメント: {skipped}")
 
 #タイルのエネルギーを見る
 
-freqs = np.asarray(qgram_L1["frequency"])
-energies = np.asarray(qgram_L1["energy"])
+freqs = np.asarray(qgram_H1["frequency"])
+energies = np.asarray(qgram_H1["energy"])
 plt.scatter(freqs, energies / energies.mean(), s=2, alpha=0.3)
 plt.xscale('log'); plt.yscale('log')
 plt.xlabel("frequency [Hz]"); plt.ylabel("normalized energy")
@@ -226,7 +228,7 @@ ad_pvalues = np.array(adlist)
 
 plt.figure(figsize=(10, 5))
 plt.scatter(time_offsets, ad_pvalues, s=15)
-plt.axhline(1e-6, linestyle="--", label="p = 1e-8")
+plt.axhline(1e-6, linestyle="--", label="p = 1e-6")
 plt.xlabel("Time from GW190828_063405 geocent time [s]")
 plt.ylabel("AD test p-value")
 plt.title("Anderson-Darling test p-value vs time")
