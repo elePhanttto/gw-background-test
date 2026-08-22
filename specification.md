@@ -9,7 +9,8 @@
 5: txtファイルは，q-transformed energyの分布について，裾(y>4)の部分が指数分布からどのくらい離れているか
 6: ADテストでは，A^2統計量自体もプロットする(GW190412_a2_H1.pngなど)
 7: 周波数ごとのq-transformedエネルギーの分布は，ホワイトニングがうまく行っているかどうかを見るためのものですが，今のところあまり気にしなくても良いと思います
-8: q-transformed energyは時間方向に相関があるため(小さいp値がたくさん出る原因)，タイルを間引いています!
+8: q-transformed energyは時間方向に相関があるため(小さいp値がたくさん出る原因)，plot_bg...pyの自己相関関数が0になる値を参考にタイルを間引いています!
+9: `plot_bg...py`の自己相関関数についてはこちらの記事を参考にしてください: https://ja.wikipedia.org/wiki/%E8%87%AA%E5%B7%B1%E7%9B%B8%E9%96%A2
 
 As that test seems fairly straightforward to put together, I’ve summarised the specifications briefly.
 
@@ -22,6 +23,7 @@ As that test seems fairly straightforward to put together, I’ve summarised the
 5: The txt file shows, for the distribution of the q-transformed energy, how far the tail (y > 4) deviates from an exponential distribution
 6: For the AD test, plot the A² statistic itself as well (e.g. GW190412_a2_H1.png)
 7: The distribution of q-transformed energy by frequency is intended to check whether the whitening process has been carried out correctly, but for the time being, I do not think you need to worry about it too much
-8: As q-transformed energy is correlated in the time domain (which causes a large number of small p-values to be produced), we are thinning out the tiles!
+8: Since q-transformed energy exhibits temporal correlation (which is what causes a large number of small p-values to appear), I’m thinning out the tiles based on the values where the autocorrelation function in `plot_bg...py` is zero!
+9: About "Autocorrelation" in `plot_bg...py`,you can see : https://en.wikipedia.org/wiki/Autocorrelation
 
 Translated with DeepL.com (free version)

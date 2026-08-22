@@ -132,7 +132,7 @@ _qg0 = _seg0.q_gram(qrange=[8, 8], frange=[30.0, 500.0], snrthresh=0)
 t_tile = np.asarray(_qg0["time"])
 e_tile = np.asarray(_qg0["energy"])
 order = np.argsort(t_tile)
-y = e_tile[order][::4]
+y = e_tile[order][::5]
 N_tiles = len(y)
 print(f"帰無分布を構築中（N={N_tiles}, n_sim=1e+6）...")
 A2_null = build_ad_null_distribution(N_tiles, n_sim=int(1e+6))
@@ -144,9 +144,9 @@ for j in range(len(random_time)):
     y_L1 = np.asarray(qgram_L1["energy"]) #エネルギーの部分を取り出す
     # 時間順にソートしてから等間隔間引き
     t_tile = np.asarray(qgram_L1["time"])
-    e_tile = np.asarray(qgram_L1["energy"])
+    e_tile = np.asarray(qgram_L1["energy"]) # time-frequencyでヒートマップをプロットすると良い =)
     order = np.argsort(t_tile)
-    y = e_tile[order][::4]        # 1/4に間引く(時間方向に相関があるため)
+    y = e_tile[order][::5]        # 1/5に間引く(時間方向に相関があるため)
     y_norm = y / y.mean()
     all_y.append(y_norm)
     print(f"タイル数: {len(y_norm)}")
