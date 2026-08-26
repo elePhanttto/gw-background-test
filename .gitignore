@@ -4,3 +4,5 @@
 image/*
 image_old/*
 image_heatmap/*
+ISpaper/*
+*.csv

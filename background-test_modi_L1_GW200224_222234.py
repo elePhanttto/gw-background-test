@@ -5,20 +5,22 @@ from gwpy.timeseries import TimeSeries
 from scipy import stats
 import numpy as np
 from matplotlib import pyplot as plt
+import pandas as pd
 from random import *
 import math
 
-event = "GW191230_180458_" #イベント名
-output1 = event + "kstest_H1.png" #ksテスト
-output2 = event + "chi2test_H1.png" #アウトプットのファイル
-output3 = event + "adtest_H1.png" #adテスト
-output4 = event + "pvalue_hist_H1.png" #histgram
-output5 = event + "dist_check_H1.png" #分布の比較
-output6 = event + "ratio_H1.txt" #裾の部分の定量化
-output7 = event + "tile_energy_H1.png" #タイルのエネルギー
-output8 = event + "a2_H1.png" #A2自体のプロット
+event = "GW200224_222234_" #イベント名
+det = "L1" #検出器
+output1 = event + "kstest_L1.png" #ksテスト
+output2 = event + "chi2test_L1.png" #アウトプットのファイル
+output3 = event + "adtest_L1.png" #adテスト
+output4 = event + "pvalue_hist_L1.png" #histgram
+output5 = event + "dist_check_L1.png" #分布の比較
+output6 = event + "ratio_L1.txt" #裾の部分の定量化
+output7 = event + "tile_energy_L1.png" #タイルのエネルギー
+output8 = event + "a2_L1.png" #A2自体のプロット
 
-geocent_time = 1261764316.4 #ここではGW191230_180458の合体時刻!
+geocent_time = 1266618172.4 #ここではGW200224_222234の合体時刻!
 exclude_time = 11 #除外する前後の区間
 duration_time = 4096 #調べる区間!
 duration_time_half = 2048 #前後2048秒
@@ -34,7 +36,7 @@ all_y = []
 
 for j in range(0,100):
     n = ((geocent_time - exclude_time)-(geocent_time-duration_time_half))/100
-    second = n * j + (geocent_time-duration_time_half)
+    second = n * j + (geocent_time-duration_time_half + 1.0)
     random_time.append(second)
 
 for j in range(0,100):
@@ -42,26 +44,33 @@ for j in range(0,100):
     second = n * j + (geocent_time + exclude_time)
     random_time.append(second)
 
-data_H1 = TimeSeries.read("H-H1_GWOSC_4KHZ_R1-1261762269-4096.hdf5",format="hdf5.gwosc") #gwoscからデータを入れておいてください! Please Download an .hdf5 file from GWOSC =)
+data_L1 = TimeSeries.read("hdf5/L-L1_GWOSC_4KHZ_R1-1266616125-4096.hdf5",format="hdf5.gwosc") #gwoscからデータを入れておいてください!
 
-# NaNのない範囲を特定
-valid = ~np.isnan(data_H1.value)
+# NaNのない範囲を特定(合体前からの連続した区間を選ぶ)
+valid = ~np.isnan(data_L1.value)
+invalid = np.isnan(data_L1.value) #nanの部分
+deltat = 1/4000 #周波数は4000Hz
+
 if not valid.all():
-    times = data_H1.times.value
+    times = data_L1.times.value
     valid_times = times[valid]
-    t_start, t_end = valid_times.min(), valid_times.max()
-    print(f"⚠️ 有効区間: {t_start:.1f} - {t_end:.1f} ({t_end-t_start:.0f}秒)")
-    
-    # 有効区間だけ切り出す（端に少し余裕を持たせる）
-    data_H1 = data_H1.crop(t_start, t_end)
-    
-    # 候補時刻も有効区間内に絞る
+    invalid_times = times[invalid]
+    t_start = valid_times.min()
+    t_nan_min = invalid_times.min()
+    if t_nan_min <= t_start:
+        for i in range(0,len(invalid_times)-1):
+            sabun = invalid_times[i+1] - invalid_times[i]
+            if sabun > deltat:
+                t_nan_min = invalid_times[i+1]
+                break
+    print(f"連続した有効区間 {t_start:.1f} 👉️ {t_nan_min:.1f} ({t_nan_min - t_start:.0f}秒)")
+    margin_time = t_nan_min - 1.0 #nanが始まる時間から1秒差し引く
+    data_L1 = data_L1.crop(t_start,margin_time)
     margin = 8.0
-    random_time = [t for t in random_time
-                   if (t_start + margin) < t and (t + 1.0) < (t_end - margin)]
+    random_time = [t for t in random_time if (t_start + margin) < t and (t + 1.0) < (margin_time - margin)]
     print(f"有効な候補数: {len(random_time)}")
 
-white = data_H1.whiten(fftlength=4, overlap=2) #ホワイトニング
+white = data_L1.whiten(fftlength=4, overlap=2) #ホワイトニング
 
 # ============================================
 # AD検定の実装（論文式3.4準拠）
@@ -132,7 +141,7 @@ _qg0 = _seg0.q_gram(qrange=[8, 8], frange=[30.0, 500.0], snrthresh=0)
 t_tile = np.asarray(_qg0["time"])
 e_tile = np.asarray(_qg0["energy"])
 order = np.argsort(t_tile)
-y = e_tile[order][::4]
+y = e_tile[order][::5]
 N_tiles = len(y)
 print(f"帰無分布を構築中（N={N_tiles}, n_sim=1e+6）...")
 A2_null = build_ad_null_distribution(N_tiles, n_sim=int(1e+6))
@@ -140,13 +149,13 @@ print(f"帰無分布の中央値: {np.median(A2_null):.3f}, 99%点: {np.percenti
 
 for j in range(len(random_time)):
     seg = white.crop(random_time[j],random_time[j] + 1.0) #切り出し
-    qgram_H1 = seg.q_gram(qrange=[8, 8], frange=[30.0, 500.0], snrthresh=0) #q-gramでq-transform
-    y_H1 = np.asarray(qgram_H1["energy"]) #エネルギーの部分を取り出す
+    qgram_L1 = seg.q_gram(qrange=[8, 8], frange=[30.0, 500.0], snrthresh=0) #q-gramでq-transform
+    y_L1 = np.asarray(qgram_L1["energy"]) #エネルギーの部分を取り出す
     # 時間順にソートしてから等間隔間引き
-    t_tile = np.asarray(qgram_H1["time"])
-    e_tile = np.asarray(qgram_H1["energy"])
+    t_tile = np.asarray(qgram_L1["time"])
+    e_tile = np.asarray(qgram_L1["energy"])
     order = np.argsort(t_tile)
-    y = e_tile[order][::4]        # 1/4に間引く(時間方向に相関があるため)
+    y = e_tile[order][::5]        # 1/5に間引く(時間方向に相関があるため)
     y_norm = y / y.mean()
     all_y.append(y_norm)
     print(f"タイル数: {len(y_norm)}")
@@ -174,8 +183,8 @@ print(f"NaNでスキップしたセグメント: {skipped}")
 
 #タイルのエネルギーを見る
 
-freqs = np.asarray(qgram_H1["frequency"])
-energies = np.asarray(qgram_H1["energy"])
+freqs = np.asarray(qgram_L1["frequency"])
+energies = np.asarray(qgram_L1["energy"])
 plt.scatter(freqs, energies / energies.mean(), s=2, alpha=0.3)
 plt.xscale('log'); plt.yscale('log')
 plt.xlabel("frequency [Hz]"); plt.ylabel("normalized energy")
@@ -200,7 +209,7 @@ plt.scatter(time_offsets, ks_pvalues, s=15)
 
 plt.axhline(1e-8, linestyle="--", label="p = 1e-8")
 
-plt.xlabel("Time from GW191230_180458 geocent time [s]")
+plt.xlabel("Time from GW200224_222234 geocent time [s]")
 plt.ylabel("KS test p-value")
 plt.title("KS test p-value vs time")
 plt.yscale('log')
@@ -220,7 +229,7 @@ plt.scatter(time_offsets, chi2_pvalues, s=15)
 
 plt.axhline(1e-8, linestyle="--", label="p = 1e-8")
 
-plt.xlabel("Time from GW191230_180458 geocent time [s]")
+plt.xlabel("Time from GW200224_222234 geocent time [s]")
 plt.ylabel(r"$\chi^2$ test p-value")
 plt.title(r"$\chi^2$ test p-value vs time")
 plt.yscale('log')
@@ -237,7 +246,7 @@ ad_pvalues = np.array(adlist)
 plt.figure(figsize=(10, 5))
 plt.scatter(time_offsets, ad_pvalues, s=15)
 plt.axhline(1e-6, linestyle="--", label="p = 1e-6")
-plt.xlabel("Time from GW191230_180458 geocent time [s]")
+plt.xlabel("Time from GW200224_222234 geocent time [s]")
 plt.ylabel("AD test p-value")
 plt.title("Anderson-Darling test p-value vs time")
 plt.yscale('log')
@@ -273,7 +282,7 @@ plt.figure(figsize=(10,5))
 plt.scatter(time_offsets, a2list, s=15)
 plt.axhline(np.percentile(A2_null, 99), ls='--', c='r', label='99% of null')
 plt.axhline(np.median(A2_null), ls=':', c='gray', label='null median')
-plt.xlabel("Time from GW191230_180458 geocent time [s]")
+plt.xlabel("Time from GW200224_222234 geocent time [s]")
 plt.ylabel(r"$A^2$ statistic")
 plt.yscale('log')
 plt.legend()
@@ -289,3 +298,14 @@ with open(output6,mode = "w",encoding='utf-8') as t:
         t.write(f"y>{thr}: ratio={obs/np.exp(-thr):.2f} \n")
 
 t.close()
+
+# CSVファイル出力
+df = pd.DataFrame({
+    "time_offset": np.array(random_time_list) - geocent_time,
+    "ks_p": kslist, "chi2_p": chi2list, "ad_p": adlist, "a2": a2list,
+})
+df.to_csv(f"{event}_{det}_results.csv", index=False)
+
+# 異常セグメントの抽出
+bad = df[(df.ks_p < 1e-3) | (df.chi2_p < 1e-3) | (df.ad_p < 1e-4)]
+print(bad.sort_values("ks_p"))

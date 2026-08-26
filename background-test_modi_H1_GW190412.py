@@ -5,10 +5,12 @@ from gwpy.timeseries import TimeSeries
 from scipy import stats
 import numpy as np
 from matplotlib import pyplot as plt
+import pandas as pd
 from random import *
 import math
 
 event = "GW190412_" #イベント名
+det = "H1" #検出器
 output1 = event + "kstest_H1.png" #ksテスト
 output2 = event + "chi2test_H1.png" #アウトプットのファイル
 output3 = event + "adtest_H1.png" #adテスト
@@ -34,7 +36,7 @@ all_y = []
 
 for j in range(0,100):
     n = ((geocent_time - exclude_time)-(geocent_time-duration_time_half))/100
-    second = n * j + (geocent_time-duration_time_half)
+    second = n * j + (geocent_time-duration_time_half + 1.0)
     random_time.append(second)
 
 for j in range(0,100):
@@ -42,23 +44,30 @@ for j in range(0,100):
     second = n * j + (geocent_time + exclude_time)
     random_time.append(second)
 
-data_H1 = TimeSeries.read("H-H1_GWOSC_4KHZ_R1-1239080215-4096.hdf5",format="hdf5.gwosc") #gwoscからデータを入れておいてください!
+data_H1 = TimeSeries.read("hdf5/H-H1_GWOSC_4KHZ_R1-1239080215-4096.hdf5",format="hdf5.gwosc") #gwoscからデータを入れておいてください!
 
-# NaNのない範囲を特定
+# NaNのない範囲を特定(合体前からの連続した区間を選ぶ)
 valid = ~np.isnan(data_H1.value)
+invalid = np.isnan(data_H1.value) #nanの部分
+deltat = 1/4000 #周波数は4000Hz
+
 if not valid.all():
     times = data_H1.times.value
     valid_times = times[valid]
-    t_start, t_end = valid_times.min(), valid_times.max()
-    print(f"⚠️ 有効区間: {t_start:.1f} - {t_end:.1f} ({t_end-t_start:.0f}秒)")
-    
-    # 有効区間だけ切り出す（端に少し余裕を持たせる）
-    data_H1 = data_H1.crop(t_start, t_end)
-    
-    # 候補時刻も有効区間内に絞る
+    invalid_times = times[invalid]
+    t_start = valid_times.min()
+    t_nan_min = invalid_times.min()
+    if t_nan_min <= t_start:
+        for i in range(0,len(invalid_times)-1):
+            sabun = invalid_times[i+1] - invalid_times[i]
+            if sabun > deltat:
+                t_nan_min = invalid_times[i+1]
+                break
+    print(f"連続した有効区間 {t_start:.1f} 👉️ {t_nan_min:.1f} ({t_nan_min - t_start:.0f}秒)")
+    margin_time = t_nan_min - 1.0 #nanが始まる時間から1秒差し引く
+    data_H1 = data_H1.crop(t_start,margin_time)
     margin = 8.0
-    random_time = [t for t in random_time
-                   if (t_start + margin) < t and (t + 1.0) < (t_end - margin)]
+    random_time = [t for t in random_time if (t_start + margin) < t and (t + 1.0) < (margin_time - margin)]
     print(f"有効な候補数: {len(random_time)}")
 
 white = data_H1.whiten(fftlength=4, overlap=2) #ホワイトニング
@@ -289,3 +298,14 @@ with open(output6,mode = "w",encoding='utf-8') as t:
         t.write(f"y>{thr}: ratio={obs/np.exp(-thr):.2f} \n")
 
 t.close()
+
+# CSVファイル出力
+df = pd.DataFrame({
+    "time_offset": np.array(random_time_list) - geocent_time,
+    "ks_p": kslist, "chi2_p": chi2list, "ad_p": adlist, "a2": a2list,
+})
+df.to_csv(f"{event}_{det}_results.csv", index=False)
+
+# 異常セグメントの抽出
+bad = df[(df.ks_p < 1e-3) | (df.chi2_p < 1e-3) | (df.ad_p < 1e-4)]
+print(bad.sort_values("ks_p"))
