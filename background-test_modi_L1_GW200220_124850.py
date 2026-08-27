@@ -8,8 +8,9 @@ from matplotlib import pyplot as plt
 import pandas as pd
 from random import *
 import math
+from bgtest_func import *
 
-event = "GW200224_222234_" #イベント名
+event = "GW200220_124850_" #イベント名
 det = "L1" #検出器
 output1 = event + "kstest_L1.png" #ksテスト
 output2 = event + "chi2test_L1.png" #アウトプットのファイル
@@ -20,7 +21,7 @@ output6 = event + "ratio_L1.txt" #裾の部分の定量化
 output7 = event + "tile_energy_L1.png" #タイルのエネルギー
 output8 = event + "a2_L1.png" #A2自体のプロット
 
-geocent_time = 1266618172.4 #ここではGW200224_222234の合体時刻!
+geocent_time = 1266238148.1 #ここではGW200220_124850の合体時刻!
 exclude_time = 11 #除外する前後の区間
 duration_time = 4096 #調べる区間!
 duration_time_half = 2048 #前後2048秒
@@ -33,6 +34,7 @@ chi2list = []
 random_time_list = []
 skipped = 0
 all_y = []
+auto_correlation_list = []
 
 for j in range(0,100):
     n = ((geocent_time - exclude_time)-(geocent_time-duration_time_half))/100
@@ -44,7 +46,7 @@ for j in range(0,100):
     second = n * j + (geocent_time + exclude_time)
     random_time.append(second)
 
-data_L1 = TimeSeries.read("hdf5/L-L1_GWOSC_4KHZ_R1-1266616125-4096.hdf5",format="hdf5.gwosc") #gwoscからデータを入れておいてください!
+data_L1 = TimeSeries.read("hdf5/L-L1_GWOSC_4KHZ_R1-1266236101-4096.hdf5",format="hdf5.gwosc") #gwoscからデータを入れておいてください!
 
 # NaNのない範囲を特定(合体前からの連続した区間を選ぶ)
 valid = ~np.isnan(data_L1.value)
@@ -72,67 +74,34 @@ if not valid.all():
 
 white = data_L1.whiten(fftlength=4, overlap=2) #ホワイトニング
 
-# ============================================
-# AD検定の実装（論文式3.4準拠）
-# ============================================
+#シミュレーションデータ
+# --- 合成ガウスノイズ（1つ目のセグメント）---
+sim = TimeSeries(
+    np.random.normal(size=len(data_L1)),
+    sample_rate=data_L1.sample_rate,
+    t0=data_L1.t0,
+)
+white_sim = sim.whiten(fftlength=4, overlap=2)
 
-def ad_statistic(y_norm):
-    """
-    正規化エネルギーに対するAnderson-Darling統計量を計算する。
-    帰無仮説: y ~ Exp(1) （F(y) = 1 - exp(-y)）
-    """
-    y = np.sort(np.asarray(y_norm))
-    N = len(y)
-    F = 1.0 - np.exp(-y)          # 指数分布(scale=1)のCDF
-    
-    # log(0)を避けるためのクリップ
-    eps = 1e-300
-    F = np.clip(F, eps, 1.0 - eps)
-    
-    i = np.arange(1, N + 1)
-    A2 = -N - np.sum((2*i - 1) / N * (np.log(F) + np.log(1.0 - F[::-1])))
-    return A2
+seg_sim = white_sim.crop(random_time[2],random_time[2] + 2.0)
 
+qspec_sim = seg_sim.q_transform(qrange=[8, 8], frange=[30.0, 500.0])
+qgram_sim = seg_sim.q_gram(qrange=[8, 8], frange=[30.0, 500.0], snrthresh=0)
 
-def build_ad_null_distribution(N, n_sim=1e+6, seed=42):
-    """
-    帰無仮説下でのA^2分布をモンテカルロで構築する。
-    N: サンプル数（タイル数）
-    n_sim: シミュレーション回数
-    """
-    rng = np.random.default_rng(seed)
-    A2_sim = np.empty(n_sim)
-    for k in range(n_sim):
-        y_sim = rng.exponential(scale=1.0, size=N)
-        y_sim /= y_sim.mean()      # 実データと同じ正規化を適用
-        A2_sim[k] = ad_statistic(y_sim)
-    return np.sort(A2_sim)
+acf_dict_sim  = acf_all_rows(qgram_sim,  max_lag=20)
+mean_sim  = mean_acf(acf_dict_sim)
+print(mean_sim)
 
+# シミュレーションデータを使って間引き率を決める
 
-def ad_pvalue(A2_obs, A2_null):
-    """経験分布からp値を計算（右側確率）"""
-    n_ge = np.sum(A2_null >= A2_obs)
-    if n_ge == 0:
-        return 1.0 / len(A2_null)   # 下限値を返す
-    return n_ge / len(A2_null)
+rate_of_mabiki = 1
+threshold = 0.1 #閾値
 
-# chi2乗検定のための関数
-
-def equiprob_bins(n_bins=9):
-    # 指数分布(scale=1)で等確率になるビン境界
-    return -np.log(1 - np.arange(1, n_bins) / n_bins)
-
-def Y_distribution_equiprob(y_norm, n_bins=9): #等確率になるビン境界での分布関数
-    edges = np.concatenate([[0], equiprob_bins(n_bins), [np.inf]])
-    obs, _ = np.histogram(y_norm, bins=edges)
-    exp = np.full(n_bins, len(y_norm) / n_bins)
-    return obs, exp
-
-def kai2jou(f_obs,f_exp): #カイ二乗検定の統計量を直接計算
-    goukei = 0.0
-    for i in range(0,len(f_exp)):
-        goukei += (f_obs[i] - f_exp[i])**2 / f_exp[i]
-    return goukei
+for i in range(len(mean_sim)):
+    rate_of_mabiki = i
+    if mean_sim[i] < threshold : #閾値を下回ったところを間引き率にする
+        break
+print(f"間引き率は…{rate_of_mabiki}")
 
 # ---- 帰無分布の準備 ----
 # まず1つ目のセグメントでタイル数を確認
@@ -141,7 +110,7 @@ _qg0 = _seg0.q_gram(qrange=[8, 8], frange=[30.0, 500.0], snrthresh=0)
 t_tile = np.asarray(_qg0["time"])
 e_tile = np.asarray(_qg0["energy"])
 order = np.argsort(t_tile)
-y = e_tile[order][::5]
+y = e_tile[order][::rate_of_mabiki]
 N_tiles = len(y)
 print(f"帰無分布を構築中（N={N_tiles}, n_sim=1e+6）...")
 A2_null = build_ad_null_distribution(N_tiles, n_sim=int(1e+6))
@@ -155,7 +124,7 @@ for j in range(len(random_time)):
     t_tile = np.asarray(qgram_L1["time"])
     e_tile = np.asarray(qgram_L1["energy"])
     order = np.argsort(t_tile)
-    y = e_tile[order][::5]        # 1/5に間引く(時間方向に相関があるため)
+    y = e_tile[order][::rate_of_mabiki]        # 間引く(時間方向に相関があるため)
     y_norm = y / y.mean()
     all_y.append(y_norm)
     print(f"タイル数: {len(y_norm)}")
@@ -209,7 +178,7 @@ plt.scatter(time_offsets, ks_pvalues, s=15)
 
 plt.axhline(1e-8, linestyle="--", label="p = 1e-8")
 
-plt.xlabel("Time from GW200224_222234 geocent time [s]")
+plt.xlabel("Time from GW200220_124850 geocent time [s]")
 plt.ylabel("KS test p-value")
 plt.title("KS test p-value vs time")
 plt.yscale('log')
@@ -229,7 +198,7 @@ plt.scatter(time_offsets, chi2_pvalues, s=15)
 
 plt.axhline(1e-8, linestyle="--", label="p = 1e-8")
 
-plt.xlabel("Time from GW200224_222234 geocent time [s]")
+plt.xlabel("Time from GW200220_124850 geocent time [s]")
 plt.ylabel(r"$\chi^2$ test p-value")
 plt.title(r"$\chi^2$ test p-value vs time")
 plt.yscale('log')
@@ -246,7 +215,7 @@ ad_pvalues = np.array(adlist)
 plt.figure(figsize=(10, 5))
 plt.scatter(time_offsets, ad_pvalues, s=15)
 plt.axhline(1e-6, linestyle="--", label="p = 1e-6")
-plt.xlabel("Time from GW200224_222234 geocent time [s]")
+plt.xlabel("Time from GW200220_124850 geocent time [s]")
 plt.ylabel("AD test p-value")
 plt.title("Anderson-Darling test p-value vs time")
 plt.yscale('log')
@@ -282,7 +251,7 @@ plt.figure(figsize=(10,5))
 plt.scatter(time_offsets, a2list, s=15)
 plt.axhline(np.percentile(A2_null, 99), ls='--', c='r', label='99% of null')
 plt.axhline(np.median(A2_null), ls=':', c='gray', label='null median')
-plt.xlabel("Time from GW200224_222234 geocent time [s]")
+plt.xlabel("Time from GW200220_124850 geocent time [s]")
 plt.ylabel(r"$A^2$ statistic")
 plt.yscale('log')
 plt.legend()
@@ -302,7 +271,7 @@ t.close()
 # CSVファイル出力
 df = pd.DataFrame({
     "time_offset": np.array(random_time_list) - geocent_time,
-    "ks_p": kslist, "chi2_p": chi2list, "ad_p": adlist, "a2": a2list,
+    "ks_p": kslist, "chi2_p": chi2list, "ad_p": adlist, "a2": a2list
 })
 df.to_csv(f"{event}_{det}_results.csv", index=False)
 

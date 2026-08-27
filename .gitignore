@@ -6,3 +6,5 @@ image_old/*
 image_heatmap/*
 ISpaper/*
 *.csv
+image(見せる用)/*
+__pycache__/*

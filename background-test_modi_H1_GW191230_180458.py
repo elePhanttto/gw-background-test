@@ -10,7 +10,7 @@ from random import *
 import math
 from bgtest_func import *
 
-event = "GW190412_" #イベント名
+event = "GW191230_180458_" #イベント名
 det = "H1" #検出器
 output1 = event + "kstest_H1.png" #ksテスト
 output2 = event + "chi2test_H1.png" #アウトプットのファイル
@@ -21,7 +21,7 @@ output6 = event + "ratio_H1.txt" #裾の部分の定量化
 output7 = event + "tile_energy_H1.png" #タイルのエネルギー
 output8 = event + "a2_H1.png" #A2自体のプロット
 
-geocent_time = 1239082262.2 #ここではGW190412の合体時刻!
+geocent_time = 1261764316.4 #ここではGW191230_180458の合体時刻!
 exclude_time = 11 #除外する前後の区間
 duration_time = 4096 #調べる区間!
 duration_time_half = 2048 #前後2048秒
@@ -46,7 +46,7 @@ for j in range(0,100):
     second = n * j + (geocent_time + exclude_time)
     random_time.append(second)
 
-data_H1 = TimeSeries.read("hdf5/H-H1_GWOSC_4KHZ_R1-1239080215-4096.hdf5",format="hdf5.gwosc") #gwoscからデータを入れておいてください!
+data_H1 = TimeSeries.read("hdf5/H-H1_GWOSC_4KHZ_R1-1261762269-4096.hdf5",format="hdf5.gwosc") #gwoscからデータを入れておいてください!
 
 # NaNのない範囲を特定(合体前からの連続した区間を選ぶ)
 valid = ~np.isnan(data_H1.value)
@@ -178,7 +178,7 @@ plt.scatter(time_offsets, ks_pvalues, s=15)
 
 plt.axhline(1e-8, linestyle="--", label="p = 1e-8")
 
-plt.xlabel("Time from GW190412 geocent time [s]")
+plt.xlabel("Time from GW191230_180458 geocent time [s]")
 plt.ylabel("KS test p-value")
 plt.title("KS test p-value vs time")
 plt.yscale('log')
@@ -198,7 +198,7 @@ plt.scatter(time_offsets, chi2_pvalues, s=15)
 
 plt.axhline(1e-8, linestyle="--", label="p = 1e-8")
 
-plt.xlabel("Time from GW190412 geocent time [s]")
+plt.xlabel("Time from GW191230_180458 geocent time [s]")
 plt.ylabel(r"$\chi^2$ test p-value")
 plt.title(r"$\chi^2$ test p-value vs time")
 plt.yscale('log')
@@ -215,7 +215,7 @@ ad_pvalues = np.array(adlist)
 plt.figure(figsize=(10, 5))
 plt.scatter(time_offsets, ad_pvalues, s=15)
 plt.axhline(1e-6, linestyle="--", label="p = 1e-6")
-plt.xlabel("Time from GW190412 geocent time [s]")
+plt.xlabel("Time from GW191230_180458 geocent time [s]")
 plt.ylabel("AD test p-value")
 plt.title("Anderson-Darling test p-value vs time")
 plt.yscale('log')
@@ -251,7 +251,7 @@ plt.figure(figsize=(10,5))
 plt.scatter(time_offsets, a2list, s=15)
 plt.axhline(np.percentile(A2_null, 99), ls='--', c='r', label='99% of null')
 plt.axhline(np.median(A2_null), ls=':', c='gray', label='null median')
-plt.xlabel("Time from GW190412 geocent time [s]")
+plt.xlabel("Time from GW191230_180458 geocent time [s]")
 plt.ylabel(r"$A^2$ statistic")
 plt.yscale('log')
 plt.legend()
