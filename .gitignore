@@ -8,3 +8,5 @@ ISpaper/*
 *.csv
 image(見せる用)/*
 __pycache__/*
+image_block/*
+*.ps1

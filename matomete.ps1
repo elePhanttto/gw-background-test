@@ -1,3 +1,3 @@
 conda activate gwpython
-python background-test_modi_H1_GW191230_180458.py
-python background-test_modi_L1_GW200220_124850.py
+python PSD_drift.py
+python PSD_drift_GW190412.py

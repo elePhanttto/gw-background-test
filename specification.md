@@ -27,3 +27,10 @@ As that test seems fairly straightforward to put together, I’ve summarised the
 8: Since the q-conversion energy exhibits temporal correlation (which is why so many small p-values occur), we simulate synthetic Gaussian noise and thin out the tiles based on the value at which the autocorrelation function becomes zero!
 9: About "Autocorrelation" in `plot_bg...py`,you can see : https://en.wikipedia.org/wiki/Autocorrelation
 10: A `.csv` file is exported to enable AI to read figures
+
+---
+
+About blockwise version(Blockwise版について)
+
+- PSDの変動を考慮して，ホワイトニングの期間を256秒・128秒・64秒・32秒に変えて同じ計算をしています
+- Considering change of PSD, we calculate in the same way while changing whitening duration, 256 s,128 s,64 s,32 s.

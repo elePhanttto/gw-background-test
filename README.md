@@ -3,10 +3,10 @@
 
 https://arxiv.org/abs/2509.14924v2 をベースにコードを作成
 
-コードの一部はClaudeが書いています
+コードの一部はClaude・ChatGPTが書いています
 
 Let’s investigate background noise!
 
 Code created based on https://arxiv.org/abs/2509.14924v2
 
-Part of the code was written by Claude
+Part of the code was written by Claude and ChatGPT

@@ -53,7 +53,7 @@ for j in range(0,100):
     second = n * j + (geocent_time + exclude_time)
     random_time.append(second)
 
-data_L1 = TimeSeries.read("L-L1_GWOSC_4KHZ_R1-1260482223-4096.hdf5",format="hdf5.gwosc") #gwoscからデータを入れておいてください!
+data_L1 = TimeSeries.read("hdf5/L-L1_GWOSC_4KHZ_R1-1260482223-4096.hdf5",format="hdf5.gwosc") #gwoscからデータを入れておいてください!
 
 # NaNのない範囲を特定
 valid = ~np.isnan(data_L1.value)
@@ -76,7 +76,14 @@ white = data_L1.whiten(fftlength=4, overlap=2) #ホワイトニング
 
 #実データについて
 
-seg = white.crop(random_time[5],random_time[5] + 2.0) #切り出し
+#129秒付近を見たい
+
+wind_time = geocent_time + 127
+
+print("切り出し時間")
+print(wind_time)
+
+seg = white.crop(wind_time,wind_time + 4.0) #切り出し．129秒付近のスペクトログラムを見る．
 qspec_L1 = seg.q_transform(qrange=[8, 8], frange=[30.0, 500.0])
 qgram_L1 = seg.q_gram(qrange=[8, 8], frange=[30.0, 500.0], snrthresh=0)
 print(qspec_L1)
@@ -92,7 +99,7 @@ sim = TimeSeries(
 )
 white_sim = sim.whiten(fftlength=4, overlap=2)
 
-seg_sim = white_sim.crop(random_time[5],random_time[5] + 2.0)
+seg_sim = white_sim.crop(wind_time,wind_time + 4.0)
 
 qspec_sim = seg_sim.q_transform(qrange=[8, 8], frange=[30.0, 500.0])
 qgram_sim = seg_sim.q_gram(qrange=[8, 8], frange=[30.0, 500.0], snrthresh=0)
