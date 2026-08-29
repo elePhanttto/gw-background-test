@@ -10,7 +10,7 @@ from random import *
 import math
 from bgtest_func import *
 
-event = "GW200220_124850_" #イベント名
+event = "GW200224_222234_" #イベント名
 det = "L1" #検出器
 output1 = event + "kstest_L1.png" #ksテスト
 output2 = event + "chi2test_L1.png" #アウトプットのファイル
@@ -22,7 +22,7 @@ output7 = event + "tile_energy_L1.png" #タイルのエネルギー
 output8 = event + "a2_L1.png" #A2自体のプロット
 output9 = event + "ratio_L1_sim.txt"
 
-geocent_time = 1266238148.1 #ここではGW200220_124850の合体時刻!
+geocent_time = 1266618172.4 #ここではGW200224_222234の合体時刻!
 exclude_time = 11 #除外する前後の区間
 duration_time = 4096 #調べる区間!
 duration_time_half = 2048 #前後2048秒
@@ -42,7 +42,7 @@ for j in range(0,100):
     second = n * j + (geocent_time + exclude_time)
     random_time.append(second)
 
-data_L1 = TimeSeries.read("hdf5/L-L1_GWOSC_4KHZ_R1-1266236101-4096.hdf55",format="hdf5.gwosc") #gwoscからデータを入れておいてください!
+data_L1 = TimeSeries.read("hdf5/L-L1_GWOSC_4KHZ_R1-1266616125-4096.hdf5",format="hdf5.gwosc") #gwoscからデータを入れておいてください!
 
 # NaNのない範囲を特定(合体前からの連続した区間を選ぶ)
 valid = ~np.isnan(data_L1.value)
@@ -139,7 +139,7 @@ fig, axes = plt.subplots(1,2,figsize=(20,5))
 axes[0].scatter(time_offsets, ks_pvalues, s=15)
 
 axes[0].axhline(1e-8, linestyle="--", label="p = 1e-8")
-axes[0].set_xlabel("Time from GW200220_124850 geocent time [s]")
+axes[0].set_xlabel("Time from GW200224_222234 geocent time [s]")
 axes[0].set_ylabel("KS test p-value")
 axes[0].set_title("KS test p-value vs time")
 axes[0].set_yscale('log')
@@ -150,7 +150,7 @@ axes[1].scatter(time_offsets, ks_pvalues_sim, s=15)
 
 axes[1].axhline(1e-8, linestyle="--", label="p = 1e-8")
 
-axes[1].set_xlabel("Time from GW200220_124850 geocent time [s]")
+axes[1].set_xlabel("Time from GW200224_222234 geocent time [s]")
 axes[1].set_ylabel("KS test p-value of gaussian noise")
 axes[1].set_title("KS test p-value vs time of gaussian noise")
 axes[1].set_yscale('log')
@@ -171,7 +171,7 @@ axes[0].scatter(time_offsets, chi2_pvalues, s=15)
 
 axes[0].axhline(1e-8, linestyle="--", label="p = 1e-8")
 
-axes[0].set_xlabel("Time from GW200220_124850 geocent time [s]")
+axes[0].set_xlabel("Time from GW200224_222234 geocent time [s]")
 axes[0].set_ylabel(r"$\chi^2$ test p-value")
 axes[0].set_title(r"$\chi^2$ test p-value vs time")
 axes[0].set_yscale('log')
@@ -182,7 +182,7 @@ axes[1].scatter(time_offsets, chi2_pvalues_sim, s=15)
 
 axes[1].axhline(1e-8, linestyle="--", label="p = 1e-8")
 
-axes[1].set_xlabel("Time from GW200220_124850 geocent time [s]")
+axes[1].set_xlabel("Time from GW200224_222234 geocent time [s]")
 axes[1].set_ylabel(r"$\chi^2$ test p-value")
 axes[1].set_title(r"$\chi^2$ test p-value vs time of gaussian noise")
 axes[1].set_yscale('log')
@@ -200,7 +200,7 @@ ad_pvalues_sim = np.array(adlist_sim)
 fig, axes = plt.subplots(1,2,figsize=(20,5))
 axes[0].scatter(time_offsets, ad_pvalues, s=15)
 axes[0].axhline(1e-6, linestyle="--", label="p = 1e-6")
-axes[0].set_xlabel("Time from GW200220_124850 geocent time [s]")
+axes[0].set_xlabel("Time from GW200224_222234 geocent time [s]")
 axes[0].set_ylabel("AD test p-value")
 axes[0].set_title("Anderson-Darling test p-value vs time")
 axes[0].set_yscale('log')
@@ -208,7 +208,7 @@ axes[0].grid(alpha=0.3)
 axes[0].legend()
 axes[1].scatter(time_offsets, ad_pvalues_sim, s=15)
 axes[1].axhline(1e-6, linestyle="--", label="p = 1e-6")
-axes[1].set_xlabel("Time from GW200220_124850 geocent time [s]")
+axes[1].set_xlabel("Time from GW200224_222234 geocent time [s]")
 axes[1].set_ylabel("AD test p-value")
 axes[1].set_title("Anderson-Darling test p-value vs time of gaussian noise")
 axes[1].set_yscale('log')
@@ -254,14 +254,14 @@ fig, axes = plt.subplots(1,2,figsize=(20,5))
 axes[0].scatter(time_offsets, a2list, s=15)
 axes[0].axhline(np.percentile(A2_null, 99), ls='--', c='r', label='99% of null')
 axes[0].axhline(np.median(A2_null), ls=':', c='gray', label='null median')
-axes[0].set_xlabel("Time from GW200220_124850 geocent time [s]")
+axes[0].set_xlabel("Time from GW200224_222234 geocent time [s]")
 axes[0].set_ylabel(r"$A^2$ statistic")
 axes[0].set_yscale('log')
 axes[0].legend()
 axes[1].scatter(time_offsets, a2list_sim, s=15)
 axes[1].axhline(np.percentile(A2_null, 99), ls='--', c='r', label='99% of null')
 axes[1].axhline(np.median(A2_null), ls=':', c='gray', label='null median')
-axes[1].set_xlabel("Time from GW200220_124850 geocent time [s]")
+axes[1].set_xlabel("Time from GW200224_222234 geocent time [s]")
 axes[1].set_ylabel(r"$A^2$ statistic")
 axes[1].set_yscale('log')
 axes[1].legend()

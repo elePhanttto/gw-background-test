@@ -41,21 +41,16 @@ def mean_acf(acf_dict, max_lag=20):
 # ============================================
 
 def ad_statistic(y_norm):
-    """
-    正規化エネルギーに対するAnderson-Darling統計量を計算する。
-    帰無仮説: y ~ Exp(1) （F(y) = 1 - exp(-y)）
-    """
-    y = np.sort(np.asarray(y_norm))
+    """A^2 統計量。帰無仮説 y ~ Exp(1)"""
+    y = np.sort(np.asarray(y_norm, dtype=float))
     N = len(y)
-    F = 1.0 - np.exp(-y)          # 指数分布(scale=1)のCDF
-    
-    # log(0)を避けるためのクリップ
-    eps = 1e-300
-    F = np.clip(F, eps, 1.0 - eps)
-    
+    # F(y) = 1 - exp(-y) なので
+    #   log F     = log1p(-exp(-y))   （y→0 でも精度を保つ）
+    #   log(1-F)  = -y                （厳密、オーバーフローしない）
+    log_F   = np.log1p(-np.exp(-y))
+    log_1mF = -y
     i = np.arange(1, N + 1)
-    A2 = -N - np.sum((2*i - 1) / N * (np.log(F) + np.log(1.0 - F[::-1])))
-    return A2
+    return -N - np.sum((2*i - 1) / N * (log_F + log_1mF[::-1]))
 
 
 def build_ad_null_distribution(N, n_sim=1e+6, seed=42):
@@ -97,3 +92,67 @@ def kai2jou(f_obs,f_exp): #カイ二乗検定の統計量を直接計算
     for i in range(0,len(f_exp)):
         goukei += (f_obs[i] - f_exp[i])**2 / f_exp[i]
     return goukei
+
+# シミュレーションデータを使って間引き率を決める
+# threads(閾値)は0.1としているが，状況に応じて変えると良い
+def calibrate_thinning(white_ts, times, n_seg=20, max_lag=20, threshold=0.1,
+                       qkw=dict(qrange=[8,8], frange=[30.0,500.0], snrthresh=0)):
+    """複数セグメントのACFを平均して間引き率を決める"""
+    acfs = []
+    for t in times[:n_seg]:
+        qg = white_ts.crop(t, t + 1.0).q_gram(**qkw)
+        d = acf_all_rows(qg, max_lag=max_lag)
+        m = mean_acf(d, max_lag=max_lag)
+        if m is not None:
+            acfs.append(m)
+    mean_all = np.mean(acfs, axis=0)
+    print(f"平均ACF (n_seg={len(acfs)}): {np.round(mean_all[:8], 3)}")
+
+    rate = 1
+    for i in range(1, len(mean_all)):
+        if mean_all[i] < threshold:
+            rate = i
+            break
+    else:
+        rate = len(mean_all) - 1
+    return max(rate, 1), mean_all
+
+# 背景テストを行う関数
+def run_test(random_time,white,skipped,geocent_time,rate_of_mabiki,A2_null):
+    kslist = []
+    chi2list = []
+    adlist = []
+    random_time_list = []
+    a2list  = []
+    all_y = []
+    for j in range(len(random_time)):
+        seg = white.crop(random_time[j],random_time[j] + 1.0) #切り出し
+        qgram_H1 = seg.q_gram(qrange=[8, 8], frange=[30.0, 500.0], snrthresh=0) #q-gramでq-transform
+        y_H1 = np.asarray(qgram_H1["energy"]) #エネルギーの部分を取り出す
+        # 時間順にソートしてから等間隔間引き
+        t_tile = np.asarray(qgram_H1["time"])
+        e_tile = np.asarray(qgram_H1["energy"])
+        order = np.argsort(t_tile)
+        y = e_tile[order][::rate_of_mabiki]  # 間引く(時間方向に相関があるため)
+        y_norm = y / y.mean()
+        all_y.append(y_norm)
+        print(f"タイル数: {len(y_norm)}")
+        obs, exp = Y_distribution_equiprob(y_norm,n_bins=9)
+        # ---KS検定---
+        ks = stats.kstest(y_norm, "expon")
+        chi2_stat, chi2_p_value = stats.chisquare(f_obs=obs,f_exp=exp)
+        # ---- AD検定 ----
+        A2_obs = ad_statistic(y_norm)
+        ad_p = ad_pvalue(A2_obs, A2_null)
+        result = stats.anderson(y_norm, dist='expon')
+        FLOOR = 1.0e-8
+        kslist.append(max(ks.pvalue, FLOOR))
+        chi2list.append(max(chi2_p_value, FLOOR))
+        adlist.append(max(ad_p, FLOOR))
+        random_time_list.append(random_time[j])
+        a2list.append(A2_obs)
+        print(f"t={random_time[j]-geocent_time:+8.1f}s  "
+          f"KS p={ks.pvalue:.2e}  chi2 p={chi2_p_value:.2e}  "
+          f"AD A2={A2_obs:.2f} p={ad_p:.2e}")
+    print(f"NaNでスキップしたセグメント: {skipped}")
+    return kslist,chi2list,adlist,random_time_list,a2list,all_y,qgram_H1,y_norm

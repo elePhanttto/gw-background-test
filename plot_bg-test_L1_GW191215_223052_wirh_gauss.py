@@ -76,9 +76,9 @@ white = data_L1.whiten(fftlength=4, overlap=2) #ホワイトニング
 
 #実データについて
 
-#129秒付近を見たい
+#173.9秒付近を見たい(blipグリッチが見られる)
 
-wind_time = geocent_time + 127
+wind_time = geocent_time + 171.9
 
 print("切り出し時間")
 print(wind_time)

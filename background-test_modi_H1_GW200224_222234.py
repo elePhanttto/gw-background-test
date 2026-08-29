@@ -10,19 +10,19 @@ from random import *
 import math
 from bgtest_func import *
 
-event = "GW200220_124850_" #イベント名
-det = "L1" #検出器
-output1 = event + "kstest_L1.png" #ksテスト
-output2 = event + "chi2test_L1.png" #アウトプットのファイル
-output3 = event + "adtest_L1.png" #adテスト
-output4 = event + "pvalue_hist_L1.png" #histgram
-output5 = event + "dist_check_L1.png" #分布の比較
-output6 = event + "ratio_L1.txt" #裾の部分の定量化
-output7 = event + "tile_energy_L1.png" #タイルのエネルギー
-output8 = event + "a2_L1.png" #A2自体のプロット
-output9 = event + "ratio_L1_sim.txt"
+event = "GW200224_222234_" #イベント名
+det = "H1" #検出器
+output1 = event + "kstest_H1.png" #ksテスト
+output2 = event + "chi2test_H1.png" #アウトプットのファイル
+output3 = event + "adtest_H1.png" #adテスト
+output4 = event + "pvalue_hist_H1.png" #histgram
+output5 = event + "dist_check_H1.png" #分布の比較
+output6 = event + "ratio_H1.txt" #裾の部分の定量化
+output7 = event + "tile_energy_H1.png" #タイルのエネルギー
+output8 = event + "a2_H1.png" #A2自体のプロット
+output9 = event + "ratio_H1_sim.txt"
 
-geocent_time = 1266238148.1 #ここではGW200220_124850の合体時刻!
+geocent_time = 1266618172.4 #ここではGW200224_222234の合体時刻!
 exclude_time = 11 #除外する前後の区間
 duration_time = 4096 #調べる区間!
 duration_time_half = 2048 #前後2048秒
@@ -42,15 +42,15 @@ for j in range(0,100):
     second = n * j + (geocent_time + exclude_time)
     random_time.append(second)
 
-data_L1 = TimeSeries.read("hdf5/L-L1_GWOSC_4KHZ_R1-1266236101-4096.hdf55",format="hdf5.gwosc") #gwoscからデータを入れておいてください!
+data_H1 = TimeSeries.read("hdf5/H-H1_GWOSC_4KHZ_R1-1266616125-4096.hdf5",format="hdf5.gwosc") #gwoscからデータを入れておいてください!
 
 # NaNのない範囲を特定(合体前からの連続した区間を選ぶ)
-valid = ~np.isnan(data_L1.value)
-invalid = np.isnan(data_L1.value) #nanの部分
+valid = ~np.isnan(data_H1.value)
+invalid = np.isnan(data_H1.value) #nanの部分
 deltat = 1/4000 #周波数は4000Hz
 
 if not valid.all():
-    times = data_L1.times.value
+    times = data_H1.times.value
     valid_times = times[valid]
     invalid_times = times[invalid]
     t_start = valid_times.min()
@@ -63,19 +63,19 @@ if not valid.all():
                 break
     print(f"連続した有効区間 {t_start:.1f} 👉️ {t_nan_min:.1f} ({t_nan_min - t_start:.0f}秒)")
     margin_time = t_nan_min - 1.0 #nanが始まる時間から1秒差し引く
-    data_L1 = data_L1.crop(t_start,margin_time)
+    data_H1 = data_H1.crop(t_start,margin_time)
     margin = 8.0
     random_time = [t for t in random_time if (t_start + margin) < t and (t + 1.0) < (margin_time - margin)]
     print(f"有効な候補数: {len(random_time)}")
 
-white = data_L1.whiten(fftlength=4, overlap=2) #ホワイトニング
+white = data_H1.whiten(fftlength=4, overlap=2) #ホワイトニング
 
 #シミュレーションデータ
 # --- 合成ガウスノイズ（1つ目のセグメント）---
 sim = TimeSeries(
-    np.random.normal(size=len(data_L1)),
-    sample_rate=data_L1.sample_rate,
-    t0=data_L1.t0,
+    np.random.normal(size=len(data_H1)),
+    sample_rate=data_H1.sample_rate,
+    t0=data_H1.t0,
 )
 white_sim = sim.whiten(fftlength=4, overlap=2)
 
@@ -105,14 +105,14 @@ print(f"帰無分布を構築中（N={N_tiles}, n_sim=1e+6）...")
 A2_null = build_ad_null_distribution(N_tiles, n_sim=int(1e+6))
 print(f"帰無分布の中央値: {np.median(A2_null):.3f}, 99%点: {np.percentile(A2_null, 99):.3f}")
 
-kslist,chi2list,adlist,random_time_list,a2list,all_y,qgram_L1,y_norm = run_test(random_time,white,skipped,geocent_time,rate_of_mabiki,A2_null)
+kslist,chi2list,adlist,random_time_list,a2list,all_y,qgram_H1,y_norm = run_test(random_time,white,skipped,geocent_time,rate_of_mabiki,A2_null)
 
-kslist_sim,chi2list_sim,adlist_sim,random_time_list_sim,a2list_sim,all_y_sim,qgram_L1_sim,y_norm_sim = run_test(random_time,white_sim,skipped,geocent_time,rate_of_mabiki,A2_null)
+kslist_sim,chi2list_sim,adlist_sim,random_time_list_sim,a2list_sim,all_y_sim,qgram_H1_sim,y_norm_sim = run_test(random_time,white_sim,skipped,geocent_time,rate_of_mabiki,A2_null)
 
 #タイルのエネルギーを見る
 
-freqs = np.asarray(qgram_L1["frequency"])
-energies = np.asarray(qgram_L1["energy"])
+freqs = np.asarray(qgram_H1["frequency"])
+energies = np.asarray(qgram_H1["energy"])
 plt.scatter(freqs, energies / energies.mean(), s=2, alpha=0.3)
 plt.xscale('log'); plt.yscale('log')
 plt.xlabel("frequency [Hz]"); plt.ylabel("normalized energy")
@@ -139,7 +139,7 @@ fig, axes = plt.subplots(1,2,figsize=(20,5))
 axes[0].scatter(time_offsets, ks_pvalues, s=15)
 
 axes[0].axhline(1e-8, linestyle="--", label="p = 1e-8")
-axes[0].set_xlabel("Time from GW200220_124850 geocent time [s]")
+axes[0].set_xlabel("Time from GW200224_222234 geocent time [s]")
 axes[0].set_ylabel("KS test p-value")
 axes[0].set_title("KS test p-value vs time")
 axes[0].set_yscale('log')
@@ -150,7 +150,7 @@ axes[1].scatter(time_offsets, ks_pvalues_sim, s=15)
 
 axes[1].axhline(1e-8, linestyle="--", label="p = 1e-8")
 
-axes[1].set_xlabel("Time from GW200220_124850 geocent time [s]")
+axes[1].set_xlabel("Time from GW200224_222234 geocent time [s]")
 axes[1].set_ylabel("KS test p-value of gaussian noise")
 axes[1].set_title("KS test p-value vs time of gaussian noise")
 axes[1].set_yscale('log')
@@ -171,7 +171,7 @@ axes[0].scatter(time_offsets, chi2_pvalues, s=15)
 
 axes[0].axhline(1e-8, linestyle="--", label="p = 1e-8")
 
-axes[0].set_xlabel("Time from GW200220_124850 geocent time [s]")
+axes[0].set_xlabel("Time from GW200224_222234 geocent time [s]")
 axes[0].set_ylabel(r"$\chi^2$ test p-value")
 axes[0].set_title(r"$\chi^2$ test p-value vs time")
 axes[0].set_yscale('log')
@@ -182,7 +182,7 @@ axes[1].scatter(time_offsets, chi2_pvalues_sim, s=15)
 
 axes[1].axhline(1e-8, linestyle="--", label="p = 1e-8")
 
-axes[1].set_xlabel("Time from GW200220_124850 geocent time [s]")
+axes[1].set_xlabel("Time from GW200224_222234 geocent time [s]")
 axes[1].set_ylabel(r"$\chi^2$ test p-value")
 axes[1].set_title(r"$\chi^2$ test p-value vs time of gaussian noise")
 axes[1].set_yscale('log')
@@ -200,7 +200,7 @@ ad_pvalues_sim = np.array(adlist_sim)
 fig, axes = plt.subplots(1,2,figsize=(20,5))
 axes[0].scatter(time_offsets, ad_pvalues, s=15)
 axes[0].axhline(1e-6, linestyle="--", label="p = 1e-6")
-axes[0].set_xlabel("Time from GW200220_124850 geocent time [s]")
+axes[0].set_xlabel("Time from GW200224_222234 geocent time [s]")
 axes[0].set_ylabel("AD test p-value")
 axes[0].set_title("Anderson-Darling test p-value vs time")
 axes[0].set_yscale('log')
@@ -208,7 +208,7 @@ axes[0].grid(alpha=0.3)
 axes[0].legend()
 axes[1].scatter(time_offsets, ad_pvalues_sim, s=15)
 axes[1].axhline(1e-6, linestyle="--", label="p = 1e-6")
-axes[1].set_xlabel("Time from GW200220_124850 geocent time [s]")
+axes[1].set_xlabel("Time from GW200224_222234 geocent time [s]")
 axes[1].set_ylabel("AD test p-value")
 axes[1].set_title("Anderson-Darling test p-value vs time of gaussian noise")
 axes[1].set_yscale('log')
@@ -254,14 +254,14 @@ fig, axes = plt.subplots(1,2,figsize=(20,5))
 axes[0].scatter(time_offsets, a2list, s=15)
 axes[0].axhline(np.percentile(A2_null, 99), ls='--', c='r', label='99% of null')
 axes[0].axhline(np.median(A2_null), ls=':', c='gray', label='null median')
-axes[0].set_xlabel("Time from GW200220_124850 geocent time [s]")
+axes[0].set_xlabel("Time from GW200224_222234 geocent time [s]")
 axes[0].set_ylabel(r"$A^2$ statistic")
 axes[0].set_yscale('log')
 axes[0].legend()
 axes[1].scatter(time_offsets, a2list_sim, s=15)
 axes[1].axhline(np.percentile(A2_null, 99), ls='--', c='r', label='99% of null')
 axes[1].axhline(np.median(A2_null), ls=':', c='gray', label='null median')
-axes[1].set_xlabel("Time from GW200220_124850 geocent time [s]")
+axes[1].set_xlabel("Time from GW200224_222234 geocent time [s]")
 axes[1].set_ylabel(r"$A^2$ statistic")
 axes[1].set_yscale('log')
 axes[1].legend()

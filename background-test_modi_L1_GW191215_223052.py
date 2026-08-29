@@ -20,6 +20,7 @@ output5 = event + "dist_check_L1.png" #分布の比較
 output6 = event + "ratio_L1.txt" #裾の部分の定量化
 output7 = event + "tile_energy_L1.png" #タイルのエネルギー
 output8 = event + "a2_L1.png" #A2自体のプロット
+output9 = event + "ratio_L1_sim.txt"
 
 geocent_time = 1260484270.3 #ここではGW191215_223052の合体時刻!
 exclude_time = 11 #除外する前後の区間
@@ -27,13 +28,8 @@ duration_time = 4096 #調べる区間!
 duration_time_half = 2048 #前後2048秒
 i = 200
 random_time = [] #ランダムに選ぶ区間のための配列
-adlist = []
-a2list = []
-kslist = []
-chi2list = []
-random_time_list = []
 skipped = 0
-all_y = []
+skipped_sim = 0
 auto_correlation_list = []
 
 for j in range(0,100):
@@ -92,15 +88,8 @@ acf_dict_sim  = acf_all_rows(qgram_sim,  max_lag=20)
 mean_sim  = mean_acf(acf_dict_sim)
 print(mean_sim)
 
-# シミュレーションデータを使って間引き率を決める
+rate_of_mabiki, mean_acf_curve = calibrate_thinning(white_sim, random_time)
 
-rate_of_mabiki = 1
-threshold = 0.1 #閾値
-
-for i in range(len(mean_sim)):
-    rate_of_mabiki = i
-    if mean_sim[i] < threshold : #閾値を下回ったところを間引き率にする
-        break
 print(f"間引き率は…{rate_of_mabiki}")
 
 # ---- 帰無分布の準備 ----
@@ -116,39 +105,9 @@ print(f"帰無分布を構築中（N={N_tiles}, n_sim=1e+6）...")
 A2_null = build_ad_null_distribution(N_tiles, n_sim=int(1e+6))
 print(f"帰無分布の中央値: {np.median(A2_null):.3f}, 99%点: {np.percentile(A2_null, 99):.3f}")
 
-for j in range(len(random_time)):
-    seg = white.crop(random_time[j],random_time[j] + 1.0) #切り出し
-    qgram_L1 = seg.q_gram(qrange=[8, 8], frange=[30.0, 500.0], snrthresh=0) #q-gramでq-transform
-    y_L1 = np.asarray(qgram_L1["energy"]) #エネルギーの部分を取り出す
-    # 時間順にソートしてから等間隔間引き
-    t_tile = np.asarray(qgram_L1["time"])
-    e_tile = np.asarray(qgram_L1["energy"])
-    order = np.argsort(t_tile)
-    y = e_tile[order][::rate_of_mabiki]        # 間引く(時間方向に相関があるため)
-    y_norm = y / y.mean()
-    all_y.append(y_norm)
-    print(f"タイル数: {len(y_norm)}")
-    obs, exp = Y_distribution_equiprob(y_norm,n_bins=9)
-    #print(y_dist,expdist)
-    # 6. 検定
-    ks = stats.kstest(y_norm, "expon")
-    chi2_stat, chi2_p_value = stats.chisquare(f_obs=obs,f_exp=exp)
-    # ---- AD検定 ----
-    A2_obs = ad_statistic(y_norm)
-    ad_p = ad_pvalue(A2_obs, A2_null)
-    result = stats.anderson(y_norm, dist='expon')
-    
-    FLOOR = 1.0e-8
-    kslist.append(max(ks.pvalue, FLOOR))
-    chi2list.append(max(chi2_p_value, FLOOR))
-    adlist.append(max(ad_p, FLOOR))
-    random_time_list.append(random_time[j])
-    a2list.append(result.statistic)
-    print(f"t={random_time[j]-geocent_time:+8.1f}s  "
-          f"KS p={ks.pvalue:.2e}  chi2 p={chi2_p_value:.2e}  "
-          f"AD A2={A2_obs:.2f} p={ad_p:.2e}")
+kslist,chi2list,adlist,random_time_list,a2list,all_y,qgram_L1,y_norm = run_test(random_time,white,skipped,geocent_time,rate_of_mabiki,A2_null)
 
-print(f"NaNでスキップしたセグメント: {skipped}")
+kslist_sim,chi2list_sim,adlist_sim,random_time_list_sim,a2list_sim,all_y_sim,qgram_L1_sim,y_norm_sim = run_test(random_time,white_sim,skipped,geocent_time,rate_of_mabiki,A2_null)
 
 #タイルのエネルギーを見る
 
@@ -168,100 +127,161 @@ time_offsets = np.array(random_time_list) - geocent_time
 
 ks_pvalues = np.array(kslist)
 chi2_pvalues = np.array(chi2list)
+ks_pvalues_sim = np.array(kslist_sim)
+chi2_pvalues_sim = np.array(chi2list_sim)
 
 # ------------------------------------------
 # KS test
 # ------------------------------------------
-plt.figure(figsize=(10, 5))
 
-plt.scatter(time_offsets, ks_pvalues, s=15)
+fig, axes = plt.subplots(1,2,figsize=(20,5))
 
-plt.axhline(1e-8, linestyle="--", label="p = 1e-8")
+axes[0].scatter(time_offsets, ks_pvalues, s=15)
 
-plt.xlabel("Time from GW191215_223052 geocent time [s]")
-plt.ylabel("KS test p-value")
-plt.title("KS test p-value vs time")
-plt.yscale('log')
-plt.grid(alpha=0.3)
-plt.legend()
+axes[0].axhline(1e-8, linestyle="--", label="p = 1e-8")
+axes[0].set_xlabel("Time from GW191215_223052 geocent time [s]")
+axes[0].set_ylabel("KS test p-value")
+axes[0].set_title("KS test p-value vs time")
+axes[0].set_yscale('log')
+axes[0].grid(alpha=0.3)
+axes[0].legend()
+
+axes[1].scatter(time_offsets, ks_pvalues_sim, s=15)
+
+axes[1].axhline(1e-8, linestyle="--", label="p = 1e-8")
+
+axes[1].set_xlabel("Time from GW191215_223052 geocent time [s]")
+axes[1].set_ylabel("KS test p-value of gaussian noise")
+axes[1].set_title("KS test p-value vs time of gaussian noise")
+axes[1].set_yscale('log')
+axes[1].grid(alpha=0.3)
+axes[1].legend()
 
 plt.tight_layout()
-plt.savefig(output1)
+fig.savefig(output1)
 
 
 # ------------------------------------------
 # Chi-square test
 # ------------------------------------------
-plt.figure(figsize=(10, 5))
 
-plt.scatter(time_offsets, chi2_pvalues, s=15)
+fig, axes = plt.subplots(1,2,figsize=(20,5))
 
-plt.axhline(1e-8, linestyle="--", label="p = 1e-8")
+axes[0].scatter(time_offsets, chi2_pvalues, s=15)
 
-plt.xlabel("Time from GW191215_223052 geocent time [s]")
-plt.ylabel(r"$\chi^2$ test p-value")
-plt.title(r"$\chi^2$ test p-value vs time")
-plt.yscale('log')
-plt.grid(alpha=0.3)
-plt.legend()
+axes[0].axhline(1e-8, linestyle="--", label="p = 1e-8")
+
+axes[0].set_xlabel("Time from GW191215_223052 geocent time [s]")
+axes[0].set_ylabel(r"$\chi^2$ test p-value")
+axes[0].set_title(r"$\chi^2$ test p-value vs time")
+axes[0].set_yscale('log')
+axes[0].grid(alpha=0.3)
+axes[0].legend()
+
+axes[1].scatter(time_offsets, chi2_pvalues_sim, s=15)
+
+axes[1].axhline(1e-8, linestyle="--", label="p = 1e-8")
+
+axes[1].set_xlabel("Time from GW191215_223052 geocent time [s]")
+axes[1].set_ylabel(r"$\chi^2$ test p-value")
+axes[1].set_title(r"$\chi^2$ test p-value vs time of gaussian noise")
+axes[1].set_yscale('log')
+axes[1].grid(alpha=0.3)
+axes[1].legend()
 
 plt.tight_layout()
-plt.savefig(output2)
+fig.savefig(output2)
 
 # adtestのプロット!
 
 ad_pvalues = np.array(adlist)
+ad_pvalues_sim = np.array(adlist_sim)
 
-plt.figure(figsize=(10, 5))
-plt.scatter(time_offsets, ad_pvalues, s=15)
-plt.axhline(1e-6, linestyle="--", label="p = 1e-6")
-plt.xlabel("Time from GW191215_223052 geocent time [s]")
-plt.ylabel("AD test p-value")
-plt.title("Anderson-Darling test p-value vs time")
-plt.yscale('log')
-plt.grid(alpha=0.3)
-plt.legend()
+fig, axes = plt.subplots(1,2,figsize=(20,5))
+axes[0].scatter(time_offsets, ad_pvalues, s=15)
+axes[0].axhline(1e-6, linestyle="--", label="p = 1e-6")
+axes[0].set_xlabel("Time from GW191215_223052 geocent time [s]")
+axes[0].set_ylabel("AD test p-value")
+axes[0].set_title("Anderson-Darling test p-value vs time")
+axes[0].set_yscale('log')
+axes[0].grid(alpha=0.3)
+axes[0].legend()
+axes[1].scatter(time_offsets, ad_pvalues_sim, s=15)
+axes[1].axhline(1e-6, linestyle="--", label="p = 1e-6")
+axes[1].set_xlabel("Time from GW191215_223052 geocent time [s]")
+axes[1].set_ylabel("AD test p-value")
+axes[1].set_title("Anderson-Darling test p-value vs time of gaussian noise")
+axes[1].set_yscale('log')
+axes[1].grid(alpha=0.3)
+axes[1].legend()
 plt.tight_layout()
-plt.savefig(output3)
+fig.savefig(output3)
 
 # histgram
 
-plt.figure(figsize=(8,5))
-plt.hist(np.log10(ks_pvalues), bins=30, alpha=0.7)
-plt.xlabel("log10(p-value)")
-plt.ylabel("count")
-plt.xlim((-8,0))
-plt.title("KS p-value distribution")
-plt.savefig(output4)
+fig, axes = plt.subplots(1,2,figsize=(20,5))
+axes[0].hist(np.log10(ks_pvalues), bins=30, alpha=0.7)
+axes[0].set_xlabel("log10(p-value)")
+axes[0].set_ylabel("count")
+axes[0].set_xlim((-8,0))
+axes[0].set_title("KS p-value distribution")
+axes[1].hist(np.log10(ks_pvalues_sim), bins=30, alpha=0.7)
+axes[1].set_xlabel("log10(p-value)")
+axes[1].set_ylabel("count")
+axes[1].set_xlim((-8,0))
+axes[1].set_title("KS p-value distribution of gaussian noise")
+fig.savefig(output4)
 
 # 分布チェック!
-
-plt.figure(figsize=(8,5))
-plt.hist(y_norm, bins=60, density=True, alpha=0.6, label="observed")
+fig, axes = plt.subplots(1,2,figsize=(20,5))
+axes[0].hist(y_norm, bins=60, density=True, alpha=0.6, label="observed")
 x = np.linspace(0, 10, 200)
-plt.plot(x, np.exp(-x), 'r-', lw=2, label=r"$e^{-y}$")
-plt.yscale('log')
-plt.xlabel("normalized energy")
-plt.legend()
-plt.savefig(output5)
+axes[0].plot(x, np.exp(-x), 'r-', lw=2, label=r"$e^{-y}$")
+axes[0].set_yscale('log')
+axes[0].set_xlabel("normalized energy")
+axes[0].legend()
+axes[1].hist(y_norm_sim, bins=60, density=True, alpha=0.6, label="observed")
+x = np.linspace(0, 10, 200)
+axes[1].plot(x, np.exp(-x), 'r-', lw=2, label=r"$e^{-y}$")
+axes[1].set_yscale('log')
+axes[1].set_xlabel("normalized energy")
+axes[1].legend()
+fig.savefig(output5)
 
 # A^2自体をプロットしてもらう
 
-plt.figure(figsize=(10,5))
-plt.scatter(time_offsets, a2list, s=15)
-plt.axhline(np.percentile(A2_null, 99), ls='--', c='r', label='99% of null')
-plt.axhline(np.median(A2_null), ls=':', c='gray', label='null median')
-plt.xlabel("Time from GW191215_223052 geocent time [s]")
-plt.ylabel(r"$A^2$ statistic")
-plt.yscale('log')
-plt.legend()
+fig, axes = plt.subplots(1,2,figsize=(20,5))
+axes[0].scatter(time_offsets, a2list, s=15)
+axes[0].axhline(np.percentile(A2_null, 99), ls='--', c='r', label='99% of null')
+axes[0].axhline(np.median(A2_null), ls=':', c='gray', label='null median')
+axes[0].set_xlabel("Time from GW191215_223052 geocent time [s]")
+axes[0].set_ylabel(r"$A^2$ statistic")
+axes[0].set_yscale('log')
+axes[0].legend()
+axes[1].scatter(time_offsets, a2list_sim, s=15)
+axes[1].axhline(np.percentile(A2_null, 99), ls='--', c='r', label='99% of null')
+axes[1].axhline(np.median(A2_null), ls=':', c='gray', label='null median')
+axes[1].set_xlabel("Time from GW191215_223052 geocent time [s]")
+axes[1].set_ylabel(r"$A^2$ statistic")
+axes[1].set_yscale('log')
+axes[1].legend()
 
-plt.savefig(output8)
+fig.savefig(output8)
 
 with open(output6,mode = "w",encoding='utf-8') as t:
     t.write("裾の部分の過剰な部分を見てみる \n")
 #裾の部分の過剰な部分を見てみる
     y_all = np.concatenate(all_y)  # 全部まとめて
+    for thr in [4,5,6,7]:
+        obs = (y_all > thr).mean()
+        t.write(f"y>{thr}: ratio={obs/np.exp(-thr):.2f} \n")
+
+t.close()
+
+with open(output9,mode = "w",encoding='utf-8') as t:
+    t.write("simデータについて裾の部分の過剰な部分を見てみる \n")
+#裾の部分の過剰な部分を見てみる
+    y_all = np.concatenate(all_y_sim)  # 全部まとめて
     for thr in [4,5,6,7]:
         obs = (y_all > thr).mean()
         t.write(f"y>{thr}: ratio={obs/np.exp(-thr):.2f} \n")
@@ -274,6 +294,13 @@ df = pd.DataFrame({
     "ks_p": kslist, "chi2_p": chi2list, "ad_p": adlist, "a2": a2list
 })
 df.to_csv(f"{event}_{det}_results.csv", index=False)
+
+df = pd.DataFrame({
+    "time_offset": np.array(random_time_list) - geocent_time,
+    "ks_p": kslist_sim, "chi2_p": chi2list_sim, "ad_p": adlist_sim, "a2": a2list_sim
+})
+df.to_csv(f"{event}_{det}_results_sim.csv", index=False)
+
 
 # 異常セグメントの抽出
 bad = df[(df.ks_p < 1e-3) | (df.chi2_p < 1e-3) | (df.ad_p < 1e-4)]
