@@ -30,8 +30,6 @@ As that test seems fairly straightforward to put together, I’ve summarised the
 10: For details on the autocorrelation function in `plot_bg...py`, please refer to this article: https://ja.wikipedia.org/wiki/%E8%87%AA%E5%B7%B1%E7%9B%B8%E9%96%A2
 11: I’ve set it up to output the results to a CSV file so that tools such as AI can read them.
 
-Translated with DeepL.com (free version)
-
 ---
 
 About blockwise version(Blockwise版について)
