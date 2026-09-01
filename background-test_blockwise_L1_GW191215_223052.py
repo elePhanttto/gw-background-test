@@ -39,6 +39,7 @@ duration_time_half = 2048
 
 # 比較する whitening の期間
 BLOCKS = [256.0, 128.0, 64.0, 32.0]
+fl = [8,16,64]
 
 # whitening
 FFT_LENGTH = 4.0

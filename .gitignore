@@ -10,3 +10,7 @@ image(見せる用)/*
 __pycache__/*
 image_block/*
 *.ps1
+image_band/*
+psd.py
+abolished/*
+image_longer/*

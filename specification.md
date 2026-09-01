@@ -13,6 +13,7 @@
 9: q-transformed energyは時間方向に相関があるため(小さいp値がたくさん出る原因)，合成ガウスノイズをシミュレーションし，自己相関関数が0になる値を参考にタイルを間引いています!
 10: `plot_bg...py`の自己相関関数についてはこちらの記事を参考にしてください: https://ja.wikipedia.org/wiki/%E8%87%AA%E5%B7%B1%E7%9B%B8%E9%96%A2
 11: AIさんなどが読み込めるよう，結果をCSVファイルに出力するようにしています
+12: 周波数ごとに同様のテストを行う`band`バージョンもあります．
 
 As that test seems fairly straightforward to put together, I’ve summarised the specifications briefly.
 
@@ -29,6 +30,7 @@ As that test seems fairly straightforward to put together, I’ve summarised the
 9: As q-transformed energy is correlated in the time domain (which causes a large number of small p-values to be produced), we simulate composite Gaussian noise and thin out the tiles based on the value at which the autocorrelation function becomes zero!
 10: For details on the autocorrelation function in `plot_bg...py`, please refer to this article: https://ja.wikipedia.org/wiki/%E8%87%AA%E5%B7%B1%E7%9B%B8%E9%96%A2
 11: I’ve set it up to output the results to a CSV file so that tools such as AI can read them.
+12: You can test backgrounds deviding frequency into some BLOCKS with `background-test...band.py`
 
 ---
 
