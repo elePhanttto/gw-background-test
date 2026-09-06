@@ -10,20 +10,20 @@ from random import *
 import math
 from bgtest_func import *
 
-event = "GW190412_" #イベント名
-det = "H1" #検出器
-output1 = event + "kstest_H1_band.png" #ksテスト
-output2 = event + "chi2test_H1_band.png" #アウトプットのファイル
-output3 = event + "adtest_H1_band.png" #adテスト
-output4 = event + "pvalue_hist_H1_band.png" #histgram
-output5 = event + "dist_check_H1_band.png" #分布の比較
-output6 = event + "ratio_H1_band.txt" #裾の部分の定量化
-output7 = event + "tile_energy_H1_band.png" #タイルのエネルギー
-output8 = event + "a2_H1_band.png" #A2自体のプロット
-output9 = event + "ratio_H1_band_sim.txt"
+event = "GW200129_065458_" #イベント名
+det = "L1" #検出器
+output1 = event + "kstest_L1_band.png" #ksテスト
+output2 = event + "chi2test_L1_band.png" #アウトプットのファイル
+output3 = event + "adtest_L1_band.png" #adテスト
+output4 = event + "pvalue_hist_L1_band.png" #histgram
+output5 = event + "dist_check_L1_band.png" #分布の比較
+output6 = event + "ratio_L1_band.txt" #裾の部分の定量化
+output7 = event + "tile_energy_L1_band.png" #タイルのエネルギー
+output8 = event + "a2_L1_band.png" #A2自体のプロット
+output9 = event + "ratio_L1_band_sim.txt"
 output10 = event + "psd.png" #PSDのプロット
 
-geocent_time = 1239082262.2 #ここではGW190412の合体時刻!
+geocent_time = 1264316116.4 #ここではGW200129_065458の合体時刻!
 exclude_time = 11 #除外する前後の区間
 duration_time = 4096 #調べる区間!
 duration_time_half = 2048 #前後2048秒
@@ -35,6 +35,7 @@ auto_correlation_list = []
 n_seg_half = 100 #セグメントの数
 seg_duration = 2.0 #セグメントの期間
 BANDS = [(0,30, 80), (1,80, 120), (2,120, 250), (3,250, 500)] #周波数ごとに分けて解析
+Q = 8 #q-transformのQ値．どんな異常を見たいかで変える
 
 for j in range(0,n_seg_half):
     n = ((geocent_time - exclude_time)-(geocent_time-duration_time_half))/n_seg_half
@@ -46,15 +47,15 @@ for j in range(0,n_seg_half):
     second = n * j + (geocent_time + exclude_time)
     random_time.append(second)
 
-data_H1 = TimeSeries.read("hdf5/H-H1_GWOSC_4KHZ_R1-1239080215-4096.hdf5",format="hdf5.gwosc") #gwoscからデータを入れておいてください!
+data_L1 = TimeSeries.read("hdf5/L-L1_GWOSC_4KHZ_R1-1264314069-4096.hdf5",format="hdf5.gwosc") #gwoscからデータを入れておいてください!
 
 # NaNのない範囲を特定(合体前からの連続した区間を選ぶ)
-valid = ~np.isnan(data_H1.value)
-invalid = np.isnan(data_H1.value) #nanの部分
+valid = ~np.isnan(data_L1.value)
+invalid = np.isnan(data_L1.value) #nanの部分
 deltat = 1/4000 #周波数は4000Hz
 
 if not valid.all():
-    times = data_H1.times.value
+    times = data_L1.times.value
     valid_times = times[valid]
     invalid_times = times[invalid]
     t_start = valid_times.min()
@@ -67,22 +68,22 @@ if not valid.all():
                 break
     print(f"連続した有効区間 {t_start:.1f} 👉️ {t_nan_min:.1f} ({t_nan_min - t_start:.0f}秒)")
     margin_time = t_nan_min - 1.0 #nanが始まる時間から1秒差し引く
-    data_H1 = data_H1.crop(t_start,margin_time)
+    data_L1 = data_L1.crop(t_start,margin_time)
     margin = 8.0
     random_time = [t for t in random_time if (t_start + margin) < t and (t + 2.0) < (margin_time - margin)]
     print(f"有効な候補数: {len(random_time)}")
 
-white = data_H1.whiten(fftlength=4, overlap=2) #ホワイトニング
+white = data_L1.whiten(fftlength=4, overlap=2,fduration=4) #ホワイトニング
 
 #シミュレーションデータ
 # --- 合成ガウスノイズ（1つ目のセグメント）---
-sim = generate_PSD_gauss(data_H1)
-white_sim = sim.whiten(fftlength=4, overlap=2)
+sim = generate_PSD_gauss(data_L1)
+white_sim = sim.whiten(fftlength=4, overlap=2,fduration=4) #Q値に応じて，fftlength,fdurationも変えるべき
 
 seg_sim = white_sim.crop(random_time[2],random_time[2] + 2.0)
 
-qspec_sim = seg_sim.q_transform(qrange=[8, 8], frange=[30.0, 500.0])
-qgram_sim = seg_sim.q_gram(qrange=[8, 8], frange=[30.0, 500.0], snrthresh=0)
+qspec_sim = seg_sim.q_transform(qrange=[Q,Q], frange=[30.0, 500.0])
+qgram_sim = seg_sim.q_gram(qrange=[Q,Q], frange=[30.0, 500.0], snrthresh=0)
 
 acf_dict_sim  = acf_all_rows(qgram_sim,  max_lag=20)
 mean_sim  = mean_acf(acf_dict_sim)
@@ -91,7 +92,7 @@ print(mean_sim)
 rate_of_mabiki = [0 for i in range(4)]
 
 for i,fmin,fmax in BANDS:
-    rate_of_mabiki[i],mean_acf_curve = calibrate_thinning_band(white_sim,random_time,fmin,fmax,seg_duration)
+    rate_of_mabiki[i],mean_acf_curve = calibrate_thinning_band(Q,white_sim,random_time,fmin,fmax,seg_duration)
 
 print(f"間引き率は…{rate_of_mabiki}")
 
@@ -102,7 +103,7 @@ A2_null = [None] * 4
 
 for i,fmin,fmax in BANDS:
     _seg0 = white.crop(random_time[0], random_time[0] + 2.0)
-    _qg0 = _seg0.q_gram(qrange=[8, 8], frange=[fmin, fmax], snrthresh=0)
+    _qg0 = _seg0.q_gram(qrange=[Q,Q], frange=[fmin, fmax], snrthresh=0)
     t_tile = np.asarray(_qg0["time"])
     e_tile = np.asarray(_qg0["energy"])
     order = np.argsort(t_tile)
@@ -130,8 +131,8 @@ ks_pvalues_sim = [[] for _ in range(4)]
 chi2_pvalues_sim = [[] for _ in range(4)]
 
 for i,fmin,fmax in BANDS:
-    kslist[i],chi2list[i],adlist[i],random_time_list[i],a2list[i],all_y,qgram_H1,y_norm = run_test_band(random_time,white,skipped,geocent_time,rate_of_mabiki[i],A2_null[i],fmin,fmax,seg_duration)
-    kslist_sim[i],chi2list_sim[i],adlist_sim[i],random_time_list_sim[i],a2list_sim[i],all_y_sim,qgram_H1_sim,y_norm_sim = run_test_band(random_time,white_sim,skipped,geocent_time,rate_of_mabiki[i],A2_null[i],fmin,fmax,seg_duration)
+    kslist[i],chi2list[i],adlist[i],random_time_list[i],a2list[i],all_y,qgram_L1,y_norm = run_test_band(Q,random_time,white,skipped,geocent_time,rate_of_mabiki[i],A2_null[i],fmin,fmax,seg_duration)
+    kslist_sim[i],chi2list_sim[i],adlist_sim[i],random_time_list_sim[i],a2list_sim[i],all_y_sim,qgram_L1_sim,y_norm_sim = run_test_band(Q,random_time,white_sim,skipped,geocent_time,rate_of_mabiki[i],A2_null[i],fmin,fmax,seg_duration)
 
     # geocent_time からの時間差 [s]
     time_offsets[i] = np.array(random_time_list[i]) - geocent_time
@@ -145,7 +146,7 @@ for i,fmin,fmax in BANDS:
     axes[0].scatter(time_offsets[i], ks_pvalues[i], s=15,alpha=0.3,label=f"real {fmin}-{fmax}")
 
 axes[0].axhline(1e-8, linestyle="--", label="p = 1e-8")
-axes[0].set_xlabel("Time from GW190412 geocent time [s]")
+axes[0].set_xlabel("Time from GW200129_065458 geocent time [s]")
 axes[0].set_ylabel("KS test p-value")
 axes[0].set_title("KS test p-value vs time")
 axes[0].set_yscale('log')
@@ -157,7 +158,7 @@ for i,fmin,fmax in BANDS:
 
 axes[1].axhline(1e-8, linestyle="--", label="p = 1e-8")
 
-axes[1].set_xlabel("Time from GW190412 geocent time [s]")
+axes[1].set_xlabel("Time from GW200129_065458 geocent time [s]")
 axes[1].set_ylabel("KS test p-value of gaussian noise")
 axes[1].set_title("KS test p-value vs time of gaussian noise")
 axes[1].set_yscale('log')
@@ -225,7 +226,7 @@ for i, fmin, fmax in BANDS:
 
     # 間引き後のタイル数を再確認
     qg = white_sim.crop(random_time[0], random_time[0] + 2.0).q_gram(
-        qrange=[8, 8], frange=[fmin, fmax], snrthresh=0)
+        qrange=[Q,Q], frange=[fmin, fmax], snrthresh=0)
     n_tile = len(np.asarray(qg["energy"])[::rate_of_mabiki[i]])
 
     p2 = stats.ks_2samp(dr.a2, ds.a2).pvalue
@@ -243,11 +244,11 @@ with open(f"{event}{det}_band_summary.txt", "w", encoding="utf-8") as f:
 
 #PSDをプロットしておく
 
-psd_H1 = data_H1.psd(fftlength=8)
+psd_L1 = data_L1.psd(fftlength=8)
 psd_sim = sim.psd(fftlength=8)
 
-freq = psd_H1.frequencies.value
-power = psd_H1.value
+freq = psd_L1.frequencies.value
+power = psd_L1.value
 freq_sim = psd_sim.frequencies.value
 power_sim = psd_sim.value
 fig, axes = plt.subplots(figsize=(10,5))

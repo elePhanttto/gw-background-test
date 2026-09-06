@@ -14,3 +14,5 @@ image_band/*
 psd.py
 abolished/*
 image_longer/*
+image_phase/*
+*.wav

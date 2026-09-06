@@ -95,12 +95,13 @@ def kai2jou(f_obs,f_exp): #カイ二乗検定の統計量を直接計算
 
 # シミュレーションデータを使って間引き率を決める
 # threads(閾値)は0.1としているが，状況に応じて変えると良い
-def calibrate_thinning(white_ts, times,seg_duration, n_seg=20, max_lag=20, threshold=0.1,
-                       qkw=dict(qrange=[8,8], frange=[30.0,500.0], snrthresh=0)):
+def calibrate_thinning(Q,white_ts, times,seg_duration, n_seg=20, max_lag=20, threshold=0.1):
     """複数セグメントのACFを平均して間引き率を決める"""
     acfs = []
+    qkw=dict(qrange=[Q,Q], frange=[30.0,500.0], snrthresh=0)
+    seg_duration_for_calib = max(seg_duration, Q / 10.0) #Q値に応じてクロップ時間を変える
     for t in times[:n_seg]:
-        qg = white_ts.crop(t, t + seg_duration).q_gram(**qkw)
+        qg = white_ts.crop(t, t + seg_duration_for_calib).q_gram(**qkw)
         d = acf_all_rows(qg, max_lag=max_lag)
         m = mean_acf(d, max_lag=max_lag)
         if m is not None:
@@ -118,12 +119,13 @@ def calibrate_thinning(white_ts, times,seg_duration, n_seg=20, max_lag=20, thres
     return max(rate, 1), mean_all
 
 #帯域ごとに間引き率を変える
-def calibrate_thinning_band(white_ts, times,fmin,fmax,seg_duration,n_seg=20, max_lag=20, threshold=0.1):
+def calibrate_thinning_band(Q,white_ts, times,fmin,fmax,seg_duration,n_seg=20, max_lag=20, threshold=0.1):
     """複数セグメントのACFを平均して間引き率を決める"""
     acfs = []
-    qkw=dict(qrange=[8,8], frange=[fmin,fmax], snrthresh=0)
+    qkw=dict(qrange=[Q,Q], frange=[fmin,fmax], snrthresh=0)
+    seg_duration_for_calib = max(seg_duration, Q / 10.0) #Q値に応じてクロップ時間を変える
     for t in times[:n_seg]:
-        qg = white_ts.crop(t, t + seg_duration).q_gram(**qkw)
+        qg = white_ts.crop(t, t + seg_duration_for_calib).q_gram(**qkw)
         d = acf_all_rows(qg, max_lag=max_lag)
         m = mean_acf(d, max_lag=max_lag)
         if m is not None:
@@ -141,7 +143,7 @@ def calibrate_thinning_band(white_ts, times,fmin,fmax,seg_duration,n_seg=20, max
     return max(rate, 1), mean_all
 
 # 背景テストを行う関数
-def run_test(random_time,white,skipped,geocent_time,rate_of_mabiki,A2_null,seg_duration):
+def run_test(Q,random_time,white,skipped,geocent_time,rate_of_mabiki,A2_null,seg_duration):
     kslist = []
     chi2list = []
     adlist = []
@@ -150,7 +152,7 @@ def run_test(random_time,white,skipped,geocent_time,rate_of_mabiki,A2_null,seg_d
     all_y = []
     for j in range(len(random_time)):
         seg = white.crop(random_time[j],random_time[j] + seg_duration) #切り出し
-        qgram_H1 = seg.q_gram(qrange=[8, 8], frange=[30.0, 500.0], snrthresh=0) #q-gramでq-transform
+        qgram_H1 = seg.q_gram(qrange=[Q,Q], frange=[30.0, 500.0], snrthresh=0) #q-gramでq-transform
         y_H1 = np.asarray(qgram_H1["energy"]) #エネルギーの部分を取り出す
         # 時間順にソートしてから等間隔間引き
         t_tile = np.asarray(qgram_H1["time"])
@@ -181,7 +183,7 @@ def run_test(random_time,white,skipped,geocent_time,rate_of_mabiki,A2_null,seg_d
     return kslist,chi2list,adlist,random_time_list,a2list,all_y,qgram_H1,y_norm
 
 # 背景テストを帯域別に行う関数
-def run_test_band(random_time,white,skipped,geocent_time,rate_of_mabiki,A2_null,fmin,fmax,seg_duration):
+def run_test_band(Q,random_time,white,skipped,geocent_time,rate_of_mabiki,A2_null,fmin,fmax,seg_duration):
     kslist = []
     chi2list = []
     adlist = []
@@ -190,7 +192,7 @@ def run_test_band(random_time,white,skipped,geocent_time,rate_of_mabiki,A2_null,
     all_y = []
     for j in range(len(random_time)):
         seg = white.crop(random_time[j],random_time[j] + seg_duration) #切り出し
-        qgram_H1 = seg.q_gram(qrange=[8, 8], frange=[fmin, fmax], snrthresh=0) #q-gramでq-transform
+        qgram_H1 = seg.q_gram(qrange=[Q,Q], frange=[fmin, fmax], snrthresh=0) #q-gramでq-transform
         y_H1 = np.asarray(qgram_H1["energy"]) #エネルギーの部分を取り出す
         # 時間順にソートしてから等間隔間引き
         t_tile = np.asarray(qgram_H1["time"])
@@ -221,7 +223,7 @@ def run_test_band(random_time,white,skipped,geocent_time,rate_of_mabiki,A2_null,
     return kslist,chi2list,adlist,random_time_list,a2list,all_y,qgram_H1,y_norm
 
 #プロットしまくる
-def plot(kslist,chi2list,adlist,random_time_list,a2list,all_y,qgram_H1,y_norm,kslist_sim,chi2list_sim,adlist_sim,random_time_list_sim,a2list_sim,all_y_sim,qgram_H1_sim,y_norm_sim,geocent_time,event,det,A2_null,output1,output2,output3,output4,output5,output6,output7,output8,output9):
+def plot(kslist,chi2list,adlist,random_time_list,a2list,all_y,qgram_H1,y_norm,kslist_sim,chi2list_sim,adlist_sim,random_time_list_sim,a2list_sim,all_y_sim,qgram_H1_sim,y_norm_sim,geocent_time,event,det,A2_null,output1,output2,output3,output4,output5,output6,output7,output8,output9,output10):
     #タイルのエネルギーを見る
 
     freqs = np.asarray(qgram_H1["frequency"])
@@ -410,13 +412,13 @@ def plot(kslist,chi2list,adlist,random_time_list,a2list,all_y,qgram_H1,y_norm,ks
         "time_offset": np.array(random_time_list) - geocent_time,
         "ks_p": kslist, "chi2_p": chi2list, "ad_p": adlist, "a2": a2list
     })
-    df.to_csv(f"{event}_{det}_results.csv", index=False)
+    df.to_csv(f"{event}_{det}_{output10}_results.csv", index=False)
 
     df = pd.DataFrame({
         "time_offset": np.array(random_time_list) - geocent_time,
         "ks_p": kslist_sim, "chi2_p": chi2list_sim, "ad_p": adlist_sim, "a2": a2list_sim
         })
-    df.to_csv(f"{event}_{det}_results_sim.csv", index=False)
+    df.to_csv(f"{event}_{det}_{output10}_results_sim.csv", index=False)
 
     # 異常セグメントの抽出
     bad = df[(df.ks_p < 1e-3) | (df.chi2_p < 1e-3) | (df.ad_p < 1e-4)]

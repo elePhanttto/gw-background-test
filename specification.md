@@ -14,6 +14,7 @@
 10: `plot_bg...py`の自己相関関数についてはこちらの記事を参考にしてください: https://ja.wikipedia.org/wiki/%E8%87%AA%E5%B7%B1%E7%9B%B8%E9%96%A2
 11: AIさんなどが読み込めるよう，結果をCSVファイルに出力するようにしています
 12: 周波数ごとに同様のテストを行う`band`バージョンもあります．
+13: ホワイトニングの設定を変えて比較できる`fftsetting`バージョンもあります
 
 As that test seems fairly straightforward to put together, I’ve summarised the specifications briefly.
 
@@ -31,6 +32,7 @@ As that test seems fairly straightforward to put together, I’ve summarised the
 10: For details on the autocorrelation function in `plot_bg...py`, please refer to this article: https://ja.wikipedia.org/wiki/%E8%87%AA%E5%B7%B1%E7%9B%B8%E9%96%A2
 11: I’ve set it up to output the results to a CSV file so that tools such as AI can read them.
 12: You can test backgrounds deviding frequency into some BLOCKS with `background-test...band.py`
+13: You can compare results with changing whitening settings with `background-test...fftsetting.py`
 
 ---
 
@@ -38,3 +40,10 @@ About blockwise version(Blockwise版について)
 
 - PSDの変動を考慮して，ホワイトニングの期間を256秒・128秒・64秒・32秒に変えて同じ計算をしています
 - Considering change of PSD, we calculate in the same way while changing whitening duration, 256 s,128 s,64 s,32 s.
+
+---
+
+About wav.py(`wav.py`について)
+
+- audacityなどで読み込むことを考えて，ホワイトニングした歪データをwavファイルに変換できるようにしています
+- You can convert whitened data into a .wav file in order to use in audacity
