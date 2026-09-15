@@ -83,7 +83,7 @@ wind_time = geocent_time + 558.72
 print("切り出し時間")
 print(wind_time)
 
-seg = white.crop(wind_time,wind_time + 4.0) #切り出し．129秒付近のスペクトログラムを見る．
+seg = white.crop(wind_time,wind_time + 4.0) #切り出し．XXX秒付近のスペクトログラムを見る．
 qspec_L1 = seg.q_transform(qrange=[8, 8], frange=[30.0, 500.0])
 qgram_L1 = seg.q_gram(qrange=[8, 8], frange=[30.0, 500.0], snrthresh=0)
 print(qspec_L1)

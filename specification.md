@@ -47,3 +47,15 @@ About wav.py(`wav.py`について)
 
 - audacityなどで読み込むことを考えて，ホワイトニングした歪データをwavファイルに変換できるようにしています
 - You can convert whitened data into a .wav file in order to use in audacity
+
+---
+
+ベイズ推定`...band_frac.py`について
+
+- https://journals.aps.org/prd/abstract/10.1103/PhysRevD.108.063016
+- `band`バージョンをベースに作る(30-80Hz,80-120Hz,120-250Hz,250-500Hz)
+- Q=8で固定(再現のため)
+- まずはAVERAGE tile powerから…
+- based on `band` version
+- fixed Q = 8 for reproduction
+- first, average tile power...
