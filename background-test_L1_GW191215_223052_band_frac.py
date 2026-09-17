@@ -9,10 +9,13 @@ from random import *
 import math
 from bgtest_func import *
 from bgtest_func_frac import * 
+import pymc as pm
+from pymc import *
 
 event = "GW191215_223052_" #イベント名
 det = "L1" #検出器
 output1 = event + "L1_avg_tilepower.png" #average tile power
+output2 = event  + det + "fractional_power.png" #fractional power
 
 geocent_time = 1260484270.3 #ここではGW191215_223052の合体時刻!
 exclude_time = 11 #除外する前後の区間
@@ -25,7 +28,8 @@ skipped_sim = 0
 auto_correlation_list = []
 n_seg_half = 100 #セグメントの数
 seg_duration = 2.0 #セグメントの期間
-BANDS = [(0,30, 80), (1,80, 120), (2,120, 250), (3,250, 500)] #周波数ごとに分けて解析
+#BANDS = [(0,30, 80), (1,80, 120), (2,120, 250), (3,250, 500)] #周波数ごとに分けて解析
+BANDS = [(0,30,40),(1,40,50),(2,50,60),(3,60,80)]
 Q = 8 #q-transformのQ値．どんな異常を見たいかで変える
 
 for j in range(0,n_seg_half):
@@ -107,7 +111,11 @@ for i,fmin,fmax in BANDS:
     #A2_null[i] = build_ad_null_distribution(N_tiles, n_sim=int(1e+4))
     #print(f"帰無分布の中央値: {np.median(A2_null[i]):.3f}, 99%点: {np.percentile(A2_null[i], 99):.3f}")
 
+#出力を定義する
+
+f_thinned = [[] for _ in range(4)]
 y_norm = [[] for _ in range(4)]
+y = [[] for _ in range(4)]
 e_tile = [[] for _ in range(4)]
 f_tile = [[] for _ in range(4)]
 t_tile = [[] for _ in range(4)]
@@ -117,7 +125,14 @@ unique_freqs = [[] for _ in range(4)]
 avg_power_by_freq = [[] for _ in range(4)]
 std_power_by_freq = [[] for _ in range(4)]
 
+freqs = [[] for _ in range(4)]
+fp_m = [[] for _ in range(4)]
+fp_l = [[] for _ in range(4)]
+fp_h = [[] for _ in range(4)]
+
+f_thinned_sim = [[] for _ in range(4)]
 y_norm_sim = [[] for _ in range(4)]
+y_sim = [[] for _ in range(4)]
 e_tile_sim = [[] for _ in range(4)]
 f_tile_sim = [[] for _ in range(4)]
 t_tile_sim = [[] for _ in range(4)]
@@ -127,6 +142,11 @@ unique_freqs_sim = [[] for _ in range(4)]
 avg_power_by_freq_sim = [[] for _ in range(4)]
 std_power_by_freq_sim = [[] for _ in range(4)]
 
+freqs_sim = [[] for _ in range(4)]
+fp_m_sim = [[] for _ in range(4)]
+fp_l_sim = [[] for _ in range(4)]
+fp_h_sim = [[] for _ in range(4)]
+
 # 見たいところ!
 t_center = 560.72
 window_duration = 5.0 #前後XX秒!
@@ -135,8 +155,10 @@ window_time[0] = geocent_time + t_center - window_duration #注目するとこ�
 window_time[1] = geocent_time + t_center + window_duration #注目するところ最小値
 
 for i,fmin,fmax in BANDS:
-    y_norm[i],e_tile[i],f_tile[i],t_tile[i],unique_freqs[i],avg_power_by_freq[i],std_power_by_freq[i]= run_test_band_qavg(Q,random_time,white,skipped,geocent_time,rate_of_mabiki[i],fmin,fmax,seg_duration)
-    y_norm_sim[i],e_tile_sim[i],f_tile_sim[i],t_tile_sim[i],unique_freqs_sim[i],avg_power_by_freq_sim[i],std_power_by_freq_sim[i]= run_test_band_qavg(Q,random_time,white_sim,skipped,geocent_time,rate_of_mabiki[i],fmin,fmax,seg_duration)
+    y_norm[i],e_tile[i],f_tile[i],t_tile[i],unique_freqs[i],avg_power_by_freq[i],std_power_by_freq[i],y[i],f_thinned[i]= run_test_band_qavg(Q,random_time,white,skipped,geocent_time,rate_of_mabiki[i],fmin,fmax,seg_duration)
+    freqs[i],fp_m[i],fp_l[i],fp_h[i] = frac_power_by_freq(y[i],f_thinned[i])
+    y_norm_sim[i],e_tile_sim[i],f_tile_sim[i],t_tile_sim[i],unique_freqs_sim[i],avg_power_by_freq_sim[i],std_power_by_freq_sim[i],y_sim[i],f_thinned_sim[i]= run_test_band_qavg(Q,random_time,white_sim,skipped,geocent_time,rate_of_mabiki[i],fmin,fmax,seg_duration)
+    freqs_sim[i],fp_m_sim[i],fp_l_sim[i],fp_h_sim[i] = frac_power_by_freq(y_sim[i],f_thinned_sim[i])
 
 fig, axes = plt.subplots(1,2,figsize=(20,5))
 for i,fmin,fmax in BANDS:
@@ -170,6 +192,10 @@ axes[1].legend()
 plt.tight_layout()
 fig.savefig(output1)
 
+# fractional power出力
+
+plot_fractional_power(BANDS,freqs, fp_m, fp_l, fp_h,freqs_sim, fp_m_sim, fp_l_sim, fp_h_sim, output2)
+
 # ============================================================
 # CSV出力（ロング形式：帯域 × real/sim を1ファイルに）
 # ============================================================
@@ -184,5 +210,19 @@ for i, fmin, fmax in BANDS:
                         rows.append(dict(band=i, fmin=fmin, fmax=fmax,dataset=tag,uniq_f = uf,avg_power=ap,std_power=sp))
 
 df = pd.DataFrame(rows)
-df.to_csv(f"{event}{det}_band_results_frac.csv", index=False)
-print(f"保存: {event}{det}_band_results_frac.csv  ({len(df)}行)")
+df.to_csv(f"{event}{det}_band_results_avg.csv", index=False)
+print(f"保存: {event}{det}_band_results_avg.csv  ({len(df)}行)")
+
+rows2 = []
+
+for i, fmin, fmax in BANDS:
+        for tag,freq, fpm,fpl,fph in [
+            ("real", freqs[i],fp_m[i],fp_l[i],fp_h[i]),
+            ("sim",  freqs_sim[i],fp_m_sim[i],fp_l_sim[i],fp_h_sim[i])
+        ]:
+            for f,fm,fl,fh in zip(freq,fpm,fpl,fph):
+                        rows2.append(dict(band=i, fmin=fmin, fmax=fmax,dataset=tag,freqs = f, frac_power_mean = fm,frac_power_low=fl,frac_power_high=fh))
+
+df = pd.DataFrame(rows2)
+df.to_csv(f"{event}{det}_band_results_fracional_power.csv", index=False)
+print(f"保存: {event}{det}_band_results_fracional_power.csv  ({len(df)}行)")

@@ -1,5 +1,7 @@
 例の検定，割と簡単に作れそうなのでチョット仕様をまとめてみた
 
+OS: Windows11
+
 > 何をしているのかをコメントアウトで書いてもらう
 
 - 1: 任意のイベントの前後の背景ノイズの正規化したq-transformed energyを計算する(GWPyのq-gram moduleを使う．4096秒間のうち，off-sourceな部分200箇所を等間隔に選ぶ👈️これは再現性のため)
@@ -55,7 +57,11 @@ About wav.py(`wav.py`について)
 - https://journals.aps.org/prd/abstract/10.1103/PhysRevD.108.063016
 - `band`バージョンをベースに作る(30-80Hz,80-120Hz,120-250Hz,250-500Hz)
 - Q=8で固定(再現のため)
-- まずはAVERAGE tile powerから…
+- まずはAVERAGE tile power(`q_gram(qrange=[Q,Q], frange=[fmin, fmax], snrthresh=0, norm='mean')`を用いる)
+- 式(4)の$\alpha_1$は$\lambda=0.5$固定?(実際には$\lambda=1$ by Claude)
+- 式(4)の$\alpha_2$は$\sigma,\nu$?
+- 結局，ベイズ推定する$\alpha = (F,\sigma,\nu)$?
+- "fractional power"の定義を確認
 - based on `band` version
 - fixed Q = 8 for reproduction
-- first, average tile power...
+- first, average tile power(use `q_gram(qrange=[Q,Q], frange=[fmin, fmax], snrthresh=0, norm='mean')`)
