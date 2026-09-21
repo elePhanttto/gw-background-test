@@ -32,7 +32,7 @@ def run_test_band_qavg(Q,random_time,white,skipped,geocent_time,rate_of_mabiki,f
     all_y = []
     random_time_list = []
     seg = white.crop(min(random_time)+1.0,max(random_time)) #切り出し
-    qgram_H1 = seg.q_gram(qrange=[Q,Q], frange=[fmin, fmax], snrthresh=0) #q-gramでq-transform．
+    qgram_H1 = seg.q_gram(qrange=[Q,Q], frange=[fmin, fmax], snrthresh=0, norm='mean') #q-gramでq-transform．正規化をmeanにすることで，元ネタ論文と揃える
     y_H1 = np.asarray(qgram_H1["energy"]) #エネルギーの部分を取り出す
     # 時間順にソートしてから等間隔間引き
     t_tile = np.asarray(qgram_H1["time"])
@@ -40,7 +40,6 @@ def run_test_band_qavg(Q,random_time,white,skipped,geocent_time,rate_of_mabiki,f
     e_tile = np.asarray(qgram_H1["energy"])
     order = np.argsort(t_tile)
     y = e_tile[order][::rate_of_mabiki]  # 間引く(時間方向に相関があるため)
-    y = y * np.log(2.0) # median正規化 → ガウス成分の平均が1になるよう補正(論文 式3)
     f_thinned = f_tile[order][::rate_of_mabiki]  # yと対応する周波数も同様に間引く
     y_norm = y / y.mean()
     all_y.append(y_norm)
