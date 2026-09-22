@@ -57,6 +57,7 @@ About wav.py(`wav.py`について)
 - https://journals.aps.org/prd/abstract/10.1103/PhysRevD.108.063016
 - `band`バージョンをベースに作る(30-80Hz,80-120Hz,120-250Hz,250-500Hz)
 - Q=8で固定(再現のため)
+- 以前の残差テストと同じ様に，信号のない部分を選ぶようにした
 - まずはAVERAGE tile power(`q_gram(qrange=[Q,Q], frange=[fmin, fmax], snrthresh=0, norm='mean')`を用いる)
 - 式(4)の$\alpha_1$は$\lambda=0.5$固定?(実際には$\lambda=1$ by Claude)👉️lambda = 1.0だと本来ガウシアンな成分を拾えないため，中央値をベースにlambdaを変える感じで
 - 式(4)の$\alpha_2$は$\sigma,\nu$?
@@ -64,6 +65,7 @@ About wav.py(`wav.py`について)
 - "fractional power"の定義を確認
 - based on `band` version
 - fixed Q = 8 for reproduction
+- Pick up 200 segments without signal like the previous residual test 
 - first, average tile power(use `q_gram(qrange=[Q,Q], frange=[fmin, fmax], snrthresh=0, norm='mean')`)
 - Is $\alpha_1$ in Equation (4) fixed at $\lambda = 0.5$? (Actually, $\lambda = 1$ according to Claude) 👉️ Since $\lambda = 1.0$ would fail to capture the inherently Gaussian component, we should adjust $\lambda$ based on the median.
 - Is $\alpha_2$ in Equation (4) equal to $\sigma$ and $\nu$?

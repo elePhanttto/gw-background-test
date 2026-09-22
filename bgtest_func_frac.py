@@ -30,20 +30,26 @@ def half_t_mean_expr(sigma, nu):
 
 def run_test_band_qavg(Q,random_time,white,skipped,geocent_time,rate_of_mabiki,fmin,fmax,seg_duration):
     all_y = []
-    random_time_list = []
-    seg = white.crop(min(random_time)+1.0,max(random_time)) #切り出し
-    qgram_H1 = seg.q_gram(qrange=[Q,Q], frange=[fmin, fmax], snrthresh=0) #q-gramでq-transform．
-    y_H1 = np.asarray(qgram_H1["energy"]) #エネルギーの部分を取り出す
-    # 時間順にソートしてから等間隔間引き
-    t_tile = np.asarray(qgram_H1["time"])
-    f_tile = np.asarray(qgram_H1["frequency"])
-    e_tile = np.asarray(qgram_H1["energy"])
+    # KS/AD検定と同じ、200個の離散的な2秒窓だけを対象にする
+    # (min~maxの連続クロップだと、合体信号や未サンプルの区間まで
+    #  混ざってしまい、KS検定とは別のデータを見ることになる)
+    e_list, f_list, t_list = [], [], []
+    for t0 in random_time:
+        qg = white.crop(t0, t0 + seg_duration).q_gram(
+            qrange=[Q, Q], frange=[fmin, fmax], snrthresh=0)
+        e_list.append(np.asarray(qg["energy"]))
+        f_list.append(np.asarray(qg["frequency"]))
+        t_list.append(np.asarray(qg["time"]))
+
+    e_tile = np.concatenate(e_list)
+    f_tile = np.concatenate(f_list)
+    t_tile = np.concatenate(t_list)
+
     order = np.argsort(t_tile)
-    y = e_tile[order][::rate_of_mabiki]  # 間引く(時間方向に相関があるため)
-    y = y * np.log(2.0) # median正規化 → ガウス成分の平均が1になるよう補正(論文 式3)
-    f_thinned = f_tile[order][::rate_of_mabiki]  # yと対応する周波数も同様に間引く
+    y = e_tile[order][::rate_of_mabiki]
+    y = y * np.log(2.0)
+    f_thinned = f_tile[order][::rate_of_mabiki]
     y_norm = y / y.mean()
-    all_y.append(y_norm)
 
     # ---- average tile power(周波数ごとの時間平均) ---- Claude製
     # 注意: y(GWpyのq_gramが返す正規化済みenergy)をそのまま使う。
@@ -169,6 +175,9 @@ def frac_power_by_freq(y,f_thinned,lam_gauss=None,min_tiles=200, **kw):
             continue
         # 辞書型のやつが返ってくる
         r = frac_power(y[mask],lam_gauss=lam_gauss,**kw)
+        if r["r_hat_max"] > 1.05:
+            print(f"  f={f:.1f}Hz: r_hat={r['r_hat_max']:.3f} — 収束せず棄却")
+            continue
         freqs.append(f)
         fp_m.append(r["fp_mean"])
         fp_l.append(r["fp_lo"])

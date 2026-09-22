@@ -17,3 +17,4 @@ image_longer/*
 image_phase/*
 *.wav
 background-test_L1_GW200129_065458_band_frac.py
+bayes/*
