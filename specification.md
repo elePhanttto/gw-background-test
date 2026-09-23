@@ -62,6 +62,9 @@ About wav.py(`wav.py`について)
 - 式(4)の$\alpha_1$は$\lambda=0.5$固定?(実際には$\lambda=1$ by Claude)👉️lambda = 1.0だと本来ガウシアンな成分を拾えないため，中央値をベースにlambdaを変える感じで
 - 式(4)の$\alpha_2$は$\sigma,\nu$?
 - 結局，ベイズ推定する$\alpha = (F,\sigma,\nu)$?
+- NUTSは非効率
+- パラメータ空間全体を調べて，対数尤度を計算する(3次元)
+- 事後分布を出す?
 - "fractional power"の定義を確認
 - based on `band` version
 - fixed Q = 8 for reproduction
@@ -70,3 +73,6 @@ About wav.py(`wav.py`について)
 - Is $\alpha_1$ in Equation (4) fixed at $\lambda = 0.5$? (Actually, $\lambda = 1$ according to Claude) 👉️ Since $\lambda = 1.0$ would fail to capture the inherently Gaussian component, we should adjust $\lambda$ based on the median.
 - Is $\alpha_2$ in Equation (4) equal to $\sigma$ and $\nu$?
 - Ultimately, is $\alpha = (F, \sigma, \nu)$ the parameter we estimate using Bayesian inference?
+- NUTS is not efficient
+- Research whole parameter space and Calculate log likelihood
+- Calculate posterior

@@ -1,6 +1,5 @@
 *.hdf5
 *.png
-*.txt
 image/*
 image_old/*
 image_heatmap/*
