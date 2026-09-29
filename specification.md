@@ -63,7 +63,7 @@ About wav.py(`wav.py`について)
 - 式(4)の$\alpha_2$は$\sigma,\nu$?
 - 結局，ベイズ推定する$\alpha = (F,\sigma,\nu)$?
 - NUTSは非効率
-- パラメータ空間全体を調べて，対数尤度を計算する(3次元)
+- パラメータ空間全体を調べて，対数尤度を計算する(3次元)(`bgtest_grid.py`)
 - 事後分布を出す?
 - "fractional power"の定義を確認
 - based on `band` version
@@ -74,5 +74,5 @@ About wav.py(`wav.py`について)
 - Is $\alpha_2$ in Equation (4) equal to $\sigma$ and $\nu$?
 - Ultimately, is $\alpha = (F, \sigma, \nu)$ the parameter we estimate using Bayesian inference?
 - NUTS is not efficient
-- Research whole parameter space and Calculate log likelihood
+- Research whole parameter space and Calculate log likelihood(`bgtest_grid.py`)
 - Calculate posterior

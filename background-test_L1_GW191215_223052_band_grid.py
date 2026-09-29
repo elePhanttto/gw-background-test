@@ -11,6 +11,7 @@ from bgtest_func import *
 from bgtest_func_frac import * 
 import pymc as pm
 from pymc import *
+from bgtest_grid import *
 
 event = "GW191215_223052_" #イベント名
 det = "L1" #検出器
@@ -170,73 +171,6 @@ window_time[1] = geocent_time + t_center + window_duration #注目するとこ�
 
 for i,fmin,fmax in BANDS:
     y_norm[i],e_tile[i],f_tile[i],t_tile[i],unique_freqs[i],avg_power_by_freq[i],std_power_by_freq[i],y[i],f_thinned[i]= run_test_band_qavg(Q,random_time,white,skipped,geocent_time,rate_of_mabiki[i],fmin,fmax,seg_duration)
-    freqs[i],fp_m[i],fp_l[i],fp_h[i] = frac_power_by_freq(y[i],f_thinned[i])
+    run_test_grid_freq(y[i],f_thinned[i],event,det,type="real")
     y_norm_sim[i],e_tile_sim[i],f_tile_sim[i],t_tile_sim[i],unique_freqs_sim[i],avg_power_by_freq_sim[i],std_power_by_freq_sim[i],y_sim[i],f_thinned_sim[i]= run_test_band_qavg(Q,random_time,white_sim,skipped,geocent_time,rate_of_mabiki[i],fmin,fmax,seg_duration)
-    freqs_sim[i],fp_m_sim[i],fp_l_sim[i],fp_h_sim[i] = frac_power_by_freq(y_sim[i],f_thinned_sim[i])
-
-fig, axes = plt.subplots(1,2,figsize=(20,5))
-for i,fmin,fmax in BANDS:
-    axes[0].errorbar(unique_freqs[i], avg_power_by_freq[i], yerr=std_power_by_freq[i],
-                    fmt='o-', ms=3, lw=1, label="real", alpha=0.7)
-
-axes[0].axhline(1.0, linestyle="--", color="gray", label="Gaussian expectation")
-#axes[0].axhline(1e-8, linestyle="--", label="p = 1e-8")
-axes[0].set_ylim((0.1,3.0))
-axes[0].set_xlabel("Frequency [1/s]")
-axes[0].set_ylabel("tile power")
-axes[0].set_title("tile power")
-axes[0].set_yscale('log')
-axes[0].grid(alpha=0.3)
-axes[0].legend()
-
-for i,fmin,fmax in BANDS:
-    axes[1].errorbar(unique_freqs_sim[i], avg_power_by_freq_sim[i], yerr=std_power_by_freq_sim[i],
-                        fmt='o-', ms=3, lw=1, label="sim", alpha=0.7)
-
-#axes[1].axhline(1e-8, linestyle="--", label="p = 1e-8")
-axes[1].axhline(1.0, linestyle="--", color="gray", label="Gaussian expectation")
-axes[1].set_ylim((0.1,3.0))
-axes[1].set_xlabel("Frequency [1/s]")
-axes[1].set_ylabel("tile power of gaussian noise")
-axes[1].set_title("tile power")
-axes[1].set_yscale('log')
-axes[1].grid(alpha=0.3)
-axes[1].legend()
-
-plt.tight_layout()
-fig.savefig(output1)
-
-# fractional power出力
-
-plot_fractional_power(BANDS,freqs, fp_m, fp_l, fp_h,freqs_sim, fp_m_sim, fp_l_sim, fp_h_sim, output2)
-
-# ============================================================
-# CSV出力（ロング形式：帯域 × real/sim を1ファイルに）
-# ============================================================
-
-rows = []
-for i, fmin, fmax in BANDS:
-        for tag,uniq_f,avg_p,std_p in [
-            ("real", unique_freqs[i], avg_power_by_freq[i], std_power_by_freq[i]),
-            ("sim",  unique_freqs_sim[i], avg_power_by_freq_sim[i], std_power_by_freq_sim[i])
-        ]:
-            for uf,ap,sp in zip(uniq_f,avg_p,std_p):
-                        rows.append(dict(band=i, fmin=fmin, fmax=fmax,dataset=tag,uniq_f = uf,avg_power=ap,std_power=sp))
-
-df = pd.DataFrame(rows)
-df.to_csv(f"{event}{det}_band_results_avg.csv", index=False)
-print(f"保存: {event}{det}_band_results_avg.csv  ({len(df)}行)")
-
-rows2 = []
-
-for i, fmin, fmax in BANDS:
-        for tag,freq, fpm,fpl,fph in [
-            ("real", freqs[i],fp_m[i],fp_l[i],fp_h[i]),
-            ("sim",  freqs_sim[i],fp_m_sim[i],fp_l_sim[i],fp_h_sim[i])
-        ]:
-            for f,fm,fl,fh in zip(freq,fpm,fpl,fph):
-                        rows2.append(dict(band=i, fmin=fmin, fmax=fmax,dataset=tag,freqs = f, frac_power_mean = fm,frac_power_low=fl,frac_power_high=fh))
-
-df = pd.DataFrame(rows2)
-df.to_csv(f"{event}{det}_band_results_fracional_power.csv", index=False)
-print(f"保存: {event}{det}_band_results_fracional_power.csv  ({len(df)}行)")
+    run_test_grid_freq(y_sim[i],f_thinned_sim[i],event,det,type="sim")
