@@ -1,4 +1,5 @@
 # https://journals.aps.org/prd/abstract/10.1103/PhysRevD.108.063016 のテストを再現するヨ!
+# パラメータをまんべんなく探すグリッドサーチ版(FはlogFで一様になる分布)
 
 from gwpy.timeseries import TimeSeries
 from scipy import stats

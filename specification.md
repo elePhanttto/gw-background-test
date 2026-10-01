@@ -64,7 +64,9 @@ About wav.py(`wav.py`について)
 - 結局，ベイズ推定する$\alpha = (F,\sigma,\nu)$?
 - NUTSは非効率
 - パラメータ空間全体を調べて，対数尤度を計算する(3次元)(`bgtest_grid.py`)
-- 事後分布を出す?
+- ただしFのみ対数一様分布
+- 各パラメータ(自由度$\nu$，非ガウス成分の期待値$\mu_{ng}$，$F$)の事後分布をコーナープロット
+- fractional powerの事後分布も描く
 - "fractional power"の定義を確認
 - based on `band` version
 - fixed Q = 8 for reproduction
@@ -75,4 +77,6 @@ About wav.py(`wav.py`について)
 - Ultimately, is $\alpha = (F, \sigma, \nu)$ the parameter we estimate using Bayesian inference?
 - NUTS is not efficient
 - Research whole parameter space and Calculate log likelihood(`bgtest_grid.py`)
-- Calculate posterior
+- F's prior is log uniform distribution
+- Plot the posterior distributions for each parameter (degrees of freedom $\nu$, expected value of the non-Gaussian component $\mu_{ng}$, and $F$) on a corner plot
+- Also plot the posterior distribution of the fractional power

@@ -23,7 +23,8 @@
 import numpy as np
 from scipy.special import gammaln
 import pandas as pd
-
+import numpy as np
+import matplotlib.pyplot as plt
 
 def c_nu(nu):
     """half Student-T の平均 / sigma。mu_ng = sigma * c(nu)。nu>1 で有限。
@@ -88,8 +89,8 @@ def grid_fp(y, lam_gauss=None, n_lam=25, n_mu=45, n_nu=25, n_F=60,
     else:
         lam_grid = np.array([float(lam_gauss)])
 
-    nu_grid = np.geomspace(1.05, nu_max, n_nu)   # nu>1 が平均の有限条件
-    F_grid = np.linspace(1e-4, 1 - 1e-4, n_F)
+    nu_grid = np.geomspace(2.0, nu_max, n_nu)   # nu>1 が平均の有限条件
+    F_grid = np.concatenate([[1e-4], np.geomspace(1e-3, 0.9999, n_F-1)]) #F を対数間隔
     mu_hi = max(y.mean() * 20.0, np.percentile(y, 99.9))
 
     LL = np.empty((len(lam_grid), n_mu, n_nu, n_F))
@@ -167,6 +168,82 @@ def plot_loglik_contour(r,output,ax=None):
     ax.set_title(f"Cross-section at lam={r['lam_grid'][i]:.3f}, F={r['F_grid'][l]:.3f} ")
     fig.savefig(output)
 
+def grid_posterior_3d(r):
+    """grid_fp の結果 r から (F, mu_ng, nu) の3次元事後分布を取り出す。
+
+    LL の軸は (lam, mu, nu, F)。mu の格子は lam ごとに違う(下限が 1.5/lam)ので、
+    最尤点の lam で切った断面(lam を固定した条件付き分布)を使う。
+    grid_fp(y, lam_gauss=値) で lam を固定した場合は、厳密な周辺分布になる。
+    """
+    LL = r["LL"]
+    i = np.unravel_index(LL.argmax(), LL.shape)[0]
+    sl = LL[i]                          # (mu, nu, F)
+    post = np.exp(sl - sl.max())
+    post = post.transpose(2, 0, 1)      # -> (F, mu, nu)
+    post /= post.sum()
+    return post, r["F_grid"], r["MUs"][i], r["nu_grid"]
+
+
+def corner_from_grid(post, F_grid, mu_grid, nu_grid, labels=None):
+    """対角=1次元周辺分布、左下=2次元周辺分布。mu, nu は対数軸で描く。"""
+    grids = [F_grid, mu_grid, nu_grid]
+    logaxis = [False, True, True]       # mu, nu は geomspace なので対数軸
+    labels = labels or [r"$F$", r"$\mu_{ng}$", r"$\nu$"]
+    n = 3
+    fig, axes = plt.subplots(n, n, figsize=(9, 9))
+
+    for i in range(n):
+        for j in range(n):
+            ax = axes[i, j]
+            if j > i:
+                ax.axis("off")
+                continue
+            if i == j:
+                marg = post.sum(axis=tuple(k for k in range(n) if k != i))
+                ax.plot(grids[i], marg, color="C0")
+                ax.fill_between(grids[i], marg, alpha=0.3, color="C0")
+                ax.set_yticks([])
+                if logaxis[i]:
+                    ax.set_xscale("log")
+            else:
+                other = tuple(k for k in range(n) if k not in (i, j))
+                m2 = post.sum(axis=other).T      # 残る軸は (j, i) の順 → 転置して (i, j)
+                ax.pcolormesh(grids[j], grids[i], m2, cmap="viridis", shading="auto")
+                if logaxis[j]:
+                    ax.set_xscale("log")
+                if logaxis[i]:
+                    ax.set_yscale("log")
+            if i == n - 1:
+                ax.set_xlabel(labels[j])
+            if j == 0 and i > 0:
+                ax.set_ylabel(labels[i])
+
+    fig.tight_layout()
+    return fig
+
+def fp_marginal(post, F_grid, mu_grid, nu_grid, mu_g, type, output1,freq, bins=100):
+    F  = F_grid[:, None, None]
+    mu = mu_grid[None, :, None]
+    fp = F * mu / ((1 - F) * mu_g + F * mu)               # (F, mu, 1)
+    fp = np.broadcast_to(fp, post.shape)                  # (F, mu, nu)
+    hist, edges = np.histogram(fp.ravel(), bins=bins, range=(0, 1),
+                               weights=post.ravel())
+    centers = 0.5 * (edges[1:] + edges[:-1])
+    cdf = np.cumsum(hist) / hist.sum()
+    lo, hi = np.interp([0.055, 0.945], cdf, centers)
+
+    fig, ax = plt.subplots(figsize=(7, 5))
+    ax.bar(centers, hist / hist.sum() / (edges[1] - edges[0]),
+           width=edges[1] - edges[0], alpha=0.6, label=type)
+    ax.axvspan(lo, hi, color="gray", alpha=0.15, label="89% CI")
+    ax.set_xlabel("fractional power")
+    ax.set_ylabel("posterior density")
+    ax.set_title(f"fractional power posterior at freq={freq} Hz")
+    ax.legend()
+    fig.savefig(output1, dpi=150)
+    plt.close(fig)                                        # ループで大量に作るのでメモリ対策
+    return centers, hist, lo, hi
+
 def run_test_grid_freq(y,f_thinned,event,det,type,min_tiles=200):
     y = np.asarray(y, dtype=float)
     f_thinned = np.asarray(f_thinned, dtype=float)
@@ -180,12 +257,21 @@ def run_test_grid_freq(y,f_thinned,event,det,type,min_tiles=200):
         r = grid_fp(y[mask])
         s = summarize(r)
         s["freqs"] = f
+        post, Fg, Mg, Ng = grid_posterior_3d(r)
+        i_lam = np.unravel_index(r["LL"].argmax(), r["LL"].shape)[0]
+        mu_g = 1.0 / r["lam_grid"][i_lam]          # スカラー
+        fig = corner_from_grid(post, Fg, Mg, Ng)
+        fig.suptitle(f"{event} {det}  f={f}Hz")
+        fig.savefig(f"corner_{event}{det}_{f}_{type}.png", dpi=150)
+        plt.close(fig)
         #s["type"] = type
-        output = f"contour_{event}{det}_{f}_{type}.png"
+        #output = f"contour_{event}{det}_{f}_{type}.png"
+        output1 = f"fp_merginal_{event}{det}_{f}_{type}.png"
+        centers, hist, lo, hi = fp_marginal(post, Fg, Mg, Ng, mu_g, type, output1,f)
         print(f"FP={s['fp_mean']:.4f} [{s['fp_lo']:.4f}-{s['fp_hi']:.4f}]  最尤点={s['fp_map']:.4f}")
         print(f"  lam={s['lam_map']:.3f}, mu_ng={s['mu_ng_map']:.2f}, nu={s['nu_map']:.1f}, F={s['F_map']:.3f}")
         print(f"  グリッド端の重み: lam={s['edge_lam']:.1e}, mu={s['edge_mu']:.1e}, nu={s['edge_nu']:.1e}")
-        plot_loglik_contour(r,output)
+        #plot_loglik_contour(r,output)
         rows.append(s)
     df = pd.DataFrame(rows)
     df.to_csv(f"{event}{det}_{type}_band_results_fracional_power_grid.csv",mode="a",index=False)
