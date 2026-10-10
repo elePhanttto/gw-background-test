@@ -20,10 +20,11 @@
 #    下限 = 識別性制約 (1.5 * mu_gauss)、上限 = データの99.9パーセンタイル程度。
 #  一方 sigma を直に掃こうとすると、nu との縮退のせいで妥当な範囲が決めにくい。
 
+import os
 import numpy as np
 from scipy.special import gammaln
+from scipy.stats import t as student_t
 import pandas as pd
-import numpy as np
 import matplotlib.pyplot as plt
 
 def c_nu(nu):
@@ -54,7 +55,8 @@ def _binned(y, n_bins):
 
 
 def grid_fp(y, lam_gauss=None, n_lam=25, n_mu=45, n_nu=25, n_F=60,
-            n_bins=600, threshold_ratio=1.5, nu_max=100.0):
+            n_bins=600, threshold_ratio=1.5, nu_max=100.0, nu_min=1.001,
+            lam_range=(0.5, 3.0)):
     """
     対数尤度をグリッド上で全部計算する。
 
@@ -70,6 +72,11 @@ def grid_fp(y, lam_gauss=None, n_lam=25, n_mu=45, n_nu=25, n_F=60,
         low quantile に変えても改善しきらない(Q10 で 0.749)。
         half Student-T はバルクにも重なるので、lam を単独でロバストに
         推定するのは原理的に難しく、同時推定した方が素直。
+    lam_range : (float, float)
+        lam グリッドの範囲を lam0=ln2/median に対する比で指定する。
+        既定 (0.5, 3.0) を n_lam=25 点で掃くと刻み幅が約7.75%になり、
+        lam の統計精度(約0.5%)より桁違いに粗い。この粗さが「純粋なガウス
+        ノイズでも fp が 0 にならない」主因だった。grid_fp_zoom() で2段階にする。
     threshold_ratio : float
         識別性制約。mu_ng >= threshold_ratio * mu_gauss をグリッドの下限にする。
         half Student-T は sigma,nu 次第で指数分布を模倣できてしまうので、
@@ -85,11 +92,13 @@ def grid_fp(y, lam_gauss=None, n_lam=25, n_mu=45, n_nu=25, n_F=60,
 
     if lam_gauss is None:
         lam0 = np.log(2.0) / np.median(y)
-        lam_grid = np.geomspace(lam0 * 0.5, lam0 * 3.0, n_lam)
+        lam_grid = np.geomspace(lam0 * lam_range[0], lam0 * lam_range[1], n_lam)
     else:
         lam_grid = np.array([float(lam_gauss)])
 
-    nu_grid = np.geomspace(2.0, nu_max, n_nu)   # nu>1 が平均の有限条件
+    # nu>1 が平均の有限条件。nu->1 に近づくほど mu_ng (平均) の意味が弱くなる。
+    # nu_min=2.0 は旧版(下端に事後確率が張り付く行が出た)。実データでは 1.2 を推奨。
+    nu_grid = np.geomspace(nu_min, nu_max, n_nu)
     F_grid = np.concatenate([[1e-4], np.geomspace(1e-3, 0.9999, n_F-1)]) #F を対数間隔
     mu_hi = max(y.mean() * 20.0, np.percentile(y, 99.9))
 
@@ -109,11 +118,47 @@ def grid_fp(y, lam_gauss=None, n_lam=25, n_mu=45, n_nu=25, n_F=60,
         LL[i] = (cnt * np.log(np.maximum(mix, 1e-300))).sum(-1)
 
     return dict(LL=LL, lam_grid=lam_grid, MUs=MUs,
-                nu_grid=nu_grid, F_grid=F_grid, n_tiles=len(y))
+                nu_grid=nu_grid, F_grid=F_grid, n_tiles=len(y),
+                cnt=cnt, ctr=ctr)
+
+
+def grid_fp_zoom(y, margin=12.0, n_lam2=60,
+                 coarse=dict(n_lam=25, n_mu=25, n_nu=12, n_F=30, n_bins=300), **kw):
+    """lam を2段階で掃く階層グリッド(lam の刻みを粗さの原因から解放する)。
+
+    1段目: 広い lam 範囲を、他の軸も粗くして素早く走査し、
+           最大対数尤度から margin 以内に入る lam の範囲だけを残す。
+    2段目: その狭い範囲を n_lam2 点で細かく走査し直す(他の軸は本来の解像度)。
+
+    【なぜ必要か】lam の統計精度は約0.5%なのに、既定の lam グリッド刻みは約7.75%。
+    格子の間に真の lam が落ちると、そのズレを非ガウス成分(F)が肩代わりして
+    しまい、純粋なガウスノイズでも fp が約0.12になる。2段目の刻みは通常 0.5%
+    以下になり、この人工的な底上げがほぼ消える。
+    返り値は grid_fp と同じ dict。1段目で測ったグリッド端の重みを edge_lam に入れる
+    (2段目の lam 範囲は意図的に狭いので、2段目の端の重みは診断にならない)。
+    """
+    r0 = grid_fp(y, **{**kw, **coarse})
+    LL0 = r0["LL"]
+    w0 = np.exp(LL0 - LL0.max()); w0 /= w0.sum()
+    wl = w0.sum(axis=(1, 2, 3))
+    keep = np.where((LL0 >= LL0.max() - margin).any(axis=(1, 2, 3)))[0]
+    lg = r0["lam_grid"]
+    lo = lg[max(keep.min() - 1, 0)]
+    hi = lg[min(keep.max() + 1, len(lg) - 1)]
+    yy = np.asarray(y, float)
+    yy = yy[np.isfinite(yy) & (yy > 0)]
+    lam0 = np.log(2.0) / np.median(yy)                # grid_fp 内部と同じ基準
+    r = grid_fp(y, lam_range=(lo / lam0, hi / lam0), n_lam=n_lam2, **kw)
+    r["edge_lam"] = float(max(wl[0], wl[-1]))
+    r["lam_range_stage2"] = (float(lo), float(hi))
+    return r
 
 
 def summarize(r):
-    """事後分布(一様事前分布)から fractional power をまとめる。
+    """事後分布から fractional power をまとめる。
+
+    事前分布は各軸の「対数一様」(grid の各点に等しい重み)。F は 1e-4〜1 を
+    対数等間隔、mu_ng・nu・lam も対数等間隔なので、小さい F に事前質量が厚い。
 
     edge_* はグリッドの端に溜まった事後確率。大きい場合は範囲不足なので、
     lam_grid / nu_max / mu_hi を広げて再計算すること。
@@ -135,16 +180,26 @@ def summarize(r):
     cdf = np.cumsum(ws)
 
     i, j, k, l = np.unravel_index(LL.argmax(), LL.shape)
+
+    # 純指数分布(F=0)に対する対数尤度の改善量。0 に近いほど「混合しても得しない」。
+    dlogL_exp = np.nan
+    if "cnt" in r:
+        cnt, ctr = r["cnt"], r["ctr"]
+        lam_hat = cnt.sum() / (cnt * ctr).sum()
+        ll_exp = (cnt * (np.log(lam_hat) - lam_hat * ctr)).sum()
+        dlogL_exp = float(LL.max() - ll_exp)
     return dict(
+        dlogL_exp=dlogL_exp,
         fp_mean=float((fp * w).sum()),
         fp_map=float(fp[i, j, 0, l]),
         fp_lo=float(np.interp(0.055, cdf, fs)),   # 89% 信用区間
         fp_hi=float(np.interp(0.945, cdf, fs)),
+        fp_ul95=float(np.interp(0.95, cdf, fs)),     # 片側95%上限(fp>=0 なので下限が0付近のときはこちらを報告)
         lam_map=float(r["lam_grid"][i]),
         mu_ng_map=float(r["MUs"][i, j]),
         nu_map=float(r["nu_grid"][k]),
         F_map=float(r["F_grid"][l]),
-        edge_lam=float(max(w.sum(axis=(1, 2, 3))[0], w.sum(axis=(1, 2, 3))[-1])),
+        edge_lam=float(r.get("edge_lam", max(w.sum(axis=(1, 2, 3))[0], w.sum(axis=(1, 2, 3))[-1]))),
         edge_mu=float(max(w.sum(axis=(0, 2, 3))[0], w.sum(axis=(0, 2, 3))[-1])),
         edge_nu=float(max(w.sum(axis=(0, 1, 3))[0], w.sum(axis=(0, 1, 3))[-1])),
         n_tiles=r["n_tiles"],
@@ -221,6 +276,40 @@ def corner_from_grid(post, F_grid, mu_grid, nu_grid, labels=None):
     fig.tight_layout()
     return fig
 
+def fp_samples(r, n_samp=200_000, seed=0):
+    """4次元事後分布(lam, mu_ng, nu, F)から fp のサンプルを引く。
+
+    【ノコギリ状ヒストグラムの原因と対策】
+    fp は (lam, mu, F) の格子点でしか値を持たない(最大で数千個の離散値)。
+    それを重み付きで100ビンに入れると、CI の幅が0.03程度のときは「値のある
+    ビン」と「空のビン」が交互に並んでノコギリになる。そこで、格子点を事後確率に
+    従って引き、各セルの内側で対数一様にばらす(格子の事前分布が対数一様なので整合的)。
+    lam についても周辺化されるので、summarize の CI と同じ分布を表す
+    (旧 fp_marginal は最尤 lam で切った条件付き分布だった)。"""
+    rng = np.random.default_rng(seed)
+    LL = r["LL"]
+    w = np.exp(LL - LL.max()).ravel()
+    w /= w.sum()
+    idx = rng.choice(w.size, size=n_samp, p=w)
+    i, j, k, l = np.unravel_index(idx, LL.shape)
+
+    def jit(lg, step, ii):
+        return np.exp(lg[ii] + rng.uniform(-0.5, 0.5, ii.size) * step[ii])
+
+    lgF = np.log(r["F_grid"])
+    F = np.clip(jit(lgF, np.gradient(lgF), l), 0.0, 1 - 1e-6)
+    lgM = np.log(r["MUs"])                                   # (n_lam, n_mu)
+    stepM = np.gradient(lgM, axis=1)
+    mu = np.exp(lgM[i, j] + rng.uniform(-0.5, 0.5, i.size) * stepM[i, j])
+    lam_g = r["lam_grid"]
+    if len(lam_g) > 1:
+        lgL = np.log(lam_g)
+        lam = jit(lgL, np.gradient(lgL), i)
+    else:
+        lam = lam_g[i]
+    return F * mu / ((1 - F) / lam + F * mu)
+
+
 def fp_marginal(post, F_grid, mu_grid, nu_grid, mu_g, type, output1,freq, bins=100):
     F  = F_grid[:, None, None]
     mu = mu_grid[None, :, None]
@@ -239,40 +328,183 @@ def fp_marginal(post, F_grid, mu_grid, nu_grid, mu_g, type, output1,freq, bins=1
     ax.set_xlabel("fractional power")
     ax.set_ylabel("posterior density")
     ax.set_title(f"fractional power posterior at freq={freq} Hz")
+    ax.set_xlim((0.0,1.0))
     ax.legend()
     fig.savefig(output1, dpi=150)
     plt.close(fig)                                        # ループで大量に作るのでメモリ対策
     return centers, hist, lo, hi
 
-def run_test_grid_freq(y,f_thinned,event,det,type,min_tiles=200):
+def fp_marginal_sampled(r, type, output1, freq, bins=100, n_samp=200_000, seed=0):
+    """fp の周辺事後分布を描く(ノコギリ対策版)。fp_marginal の置き換え。"""
+    fp = fp_samples(r, n_samp=n_samp, seed=seed)
+    lo, hi, ul = np.percentile(fp, [5.5, 94.5, 95.0])
+    x0, x1 = np.percentile(fp, [0.1, 99.9])
+    pad = 0.1 * (x1 - x0) + 1e-3
+    hist, edges = np.histogram(fp, bins=bins, range=(max(0.0, x0 - pad), min(1.0, x1 + pad)),
+                               density=True)
+    centers = 0.5 * (edges[1:] + edges[:-1])
+    fig, ax = plt.subplots(figsize=(7, 5))
+    ax.bar(centers, hist, width=edges[1] - edges[0], alpha=0.6, label=type)
+    ax.axvspan(lo, hi, color="gray", alpha=0.15, label="89% CI")
+    ax.axvline(ul, color="C3", ls="--", lw=1, label=f"95% upper limit = {ul:.3f}")
+    ax.set_xlabel("fractional power")
+    ax.set_ylabel("posterior density")
+    ax.set_title(f"fractional power posterior at freq={freq} Hz")
+    ax.set_xlim((0.0,1.0))
+    ax.legend()
+    fig.savefig(output1, dpi=150)
+    plt.close(fig)
+    return centers, hist, lo, hi, ul
+
+
+# ---------------------------------------------------------------------------
+# 診断: 「混合モデルが当てはまる状況か」を fp の前に確認する
+# ---------------------------------------------------------------------------
+def tail_check(y, z_thr=3.0):
+    """y の平均が純指数分布の期待値(=1)からどれだけズレているかで裾の重さを判定する。
+
+    y は median=ln2 に規格化されているので、ガウス雑音なら E[y]=1, Var[y]=1。
+    よって z=(mean-1)*sqrt(N) は N(0,1) に従う(タイルが独立なら)。
+      z >  z_thr : "heavy"  (裾が重い → グリッチ的。fp が解釈できる状況)
+      z < -z_thr : "light"  (裾が軽い → 線スペクトル等。混合モデルの想定外で fp は無意味)
+    【なぜ必要か】Rice 分布(線スペクトル+ガウス雑音)の合成データで検証したところ、
+    裾が軽いデータでも F->1, fp->1, 狭すぎる CI を返す(混合モデルが誤指定)。"""
+    y = np.asarray(y, float); y = y[np.isfinite(y) & (y > 0)]
+    z = (y.mean() - 1.0) * np.sqrt(len(y))
+    tail = "heavy" if z > z_thr else ("light" if z < -z_thr else "ok")
+    return dict(y_mean=float(y.mean()), y_mean_z=float(z), tail=tail)
+
+
+def mixture_cdf(y, lam, mu_ng, nu, F):
+    """混合分布 (1-F)Exp(lam) + F HalfT の累積分布関数。"""
+    sig = mu_ng / c_nu(nu)
+    return (1 - F) * (-np.expm1(-lam * y)) + F * (2.0 * student_t.cdf(y / sig, nu) - 1.0)
+
+
+def ks_distance(y, cdf):
+    """経験分布と cdf(y) の Kolmogorov-Smirnov 距離 D (スケールしていない生の値)。"""
+    ys = np.sort(np.asarray(y, float))
+    n = len(ys); c = cdf(ys)
+    i = np.arange(1, n + 1)
+    return float(max((i / n - c).max(), (c - (i - 1) / n).max()))
+
+
+def diagnose_band(yb, s, event, det, type, f, tb=None, n_chunk=40, outdir="."):
+    """帯域ごとの診断図(3枚組)を保存する。
+
+    A: 生存関数 P(Y>y) の対数プロット。データ / 純指数 / 最尤混合モデル。
+    B: Q-Q プロット(指数分布の分位点との比較)。右上で対角線より下 -> 裾が軽い、上 -> 重い。
+    C: 時間チャンクごとの y の平均(tb を渡したとき)。1 からの系統的なズレ -> PSD の非定常。
+       灰色帯は純ガウスなら 1±2/sqrt(n_chunk内のタイル数)。
+    """
+    yb = np.asarray(yb, float)
+    ys = np.sort(yb)
+    n = len(ys)
+    sf = 1.0 - (np.arange(1, n + 1) - 0.5) / n
+    ncol = 3 if tb is not None else 2
+    fig, ax = plt.subplots(1, ncol, figsize=(5 * ncol, 4.2))
+
+    yy = np.geomspace(max(ys[0], 1e-3), ys[-1], 400)
+    ax[0].loglog(ys, sf, ".", ms=2, color="k", label="data")
+    ax[0].loglog(yy, np.exp(-yy), "C0--", lw=1.2, label="Exp(1) (pure Gaussian)")
+    ax[0].loglog(yy, 1 - mixture_cdf(yy, s["lam_map"], s["mu_ng_map"], s["nu_map"], s["F_map"]),
+                 "C3-", lw=1.2, label="MAP mixture")
+    ax[0].set_ylim(max(1.0 / n / 3, 1e-8), 1.5)
+    ax[0].set_xlabel("y (tile power, median=ln2)"); ax[0].set_ylabel("P(Y>y)")
+    ax[0].legend(fontsize=8); ax[0].set_title("survival function")
+
+    q_exp = -np.log(sf)
+    ax[1].loglog(q_exp, ys, ".", ms=2, color="k")
+    lim = [min(q_exp.min(), ys.min()), max(q_exp.max(), ys.max())]
+    ax[1].loglog(lim, lim, "C0--", lw=1)
+    ax[1].set_xlabel("Exp(1) quantile"); ax[1].set_ylabel("data quantile")
+    ax[1].set_title(f"Q-Q  (tail={s.get('tail','?')}, mean={s.get('y_mean', np.nan):.3f})")
+
+    if tb is not None:
+        tb = np.asarray(tb, float)
+        order = np.argsort(tb)
+        chunks = np.array_split(order, n_chunk)
+        tc = np.array([tb[c].mean() for c in chunks])
+        mc = np.array([yb[c].mean() for c in chunks])
+        nc = np.array([len(c) for c in chunks])
+        ax[2].axhspan(1 - 2 / np.sqrt(nc.min()), 1 + 2 / np.sqrt(nc.min()), color="gray", alpha=0.2)
+        ax[2].plot(tc, mc, "o-", ms=3)
+        ax[2].axhline(1.0, color="C0", ls="--", lw=1)
+        ax[2].set_xlabel("time [s]"); ax[2].set_ylabel("chunk mean of y")
+        ax[2].set_title("band power vs time")
+
+    fig.suptitle(f"{event} {det} {f} Hz  fp={s['fp_mean']:.3f}  status={s.get('status','')}", fontsize=10)
+    fig.tight_layout()
+    fig.savefig(os.path.join(outdir, f"diag_{event}{det}_{f}_{type}.png"), dpi=130)
+    plt.close(fig)
+
+
+def run_test_grid_freq(y, f_thinned, event, det, type, min_tiles=200, zoom=True,
+                       nu_min=1.001, t_thinned=None, diag=True, outdir="."):
+    """
+    帯域ごとに fractional power を推定し、CSV に追記する。
+
+    新しい引数
+    ----------
+    nu_min : ν グリッドの下端。既定 1.2(旧版は 2.0)。旧結果と比べるなら 2.0 を渡す。
+    t_thinned : y と同じ長さの時刻配列。渡すと診断図 C(時間チャンク平均)が付く。
+    diag : True で帯域ごとに診断図 diag_*.png を保存する。
+    CSV の追加列:
+      y_mean, y_mean_z, tail : 裾の重さの判定(tail_check)
+      ks_exp, ks_fit         : KS 距離(純指数 / 最尤混合)。ks_fit が ks_exp より十分小さいときだけ混合の意味がある
+      dlogL_exp              : 純指数に対する最大対数尤度の改善量
+      status                 : "" / "light-tail(model mismatch)" / "unidentified(bimodal)"
+    """
     y = np.asarray(y, dtype=float)
     f_thinned = np.asarray(f_thinned, dtype=float)
+    t_arr = None if t_thinned is None else np.asarray(t_thinned, dtype=float)
+    os.makedirs(outdir, exist_ok=True)
     rows = []
     for f in np.unique(f_thinned):
         mask = (f_thinned == f)
         if mask.sum() < min_tiles:
             print(f"  f={f:.1f}Hz: タイル数 {mask.sum()} が min_tiles={min_tiles} 未満のためスキップ")
             continue
-        # 辞書型のやつが返ってくる
-        r = grid_fp(y[mask])
+        yb = y[mask]
+        r = (grid_fp_zoom(yb, nu_min=nu_min) if zoom else grid_fp(yb, nu_min=nu_min))
         s = summarize(r)
         s["freqs"] = f
+        s.update(tail_check(yb))
+        ok = np.isfinite(yb) & (yb > 0)
+        s["ks_exp"] = ks_distance(yb[ok], lambda v: -np.expm1(-v))
+        s["ks_fit"] = ks_distance(yb[ok], lambda v: mixture_cdf(
+            v, s["lam_map"], s["mu_ng_map"], s["nu_map"], s["F_map"]))
+
         post, Fg, Mg, Ng = grid_posterior_3d(r)
-        i_lam = np.unravel_index(r["LL"].argmax(), r["LL"].shape)[0]
-        mu_g = 1.0 / r["lam_grid"][i_lam]          # スカラー
         fig = corner_from_grid(post, Fg, Mg, Ng)
         fig.suptitle(f"{event} {det}  f={f}Hz")
-        fig.savefig(f"corner_{event}{det}_{f}_{type}.png", dpi=150)
+        fig.savefig(os.path.join(outdir, f"corner_{event}{det}_{f}_{type}.png"), dpi=150)
         plt.close(fig)
-        #s["type"] = type
-        #output = f"contour_{event}{det}_{f}_{type}.png"
-        output1 = f"fp_merginal_{event}{det}_{f}_{type}.png"
-        centers, hist, lo, hi = fp_marginal(post, Fg, Mg, Ng, mu_g, type, output1,f)
-        print(f"FP={s['fp_mean']:.4f} [{s['fp_lo']:.4f}-{s['fp_hi']:.4f}]  最尤点={s['fp_map']:.4f}")
-        print(f"  lam={s['lam_map']:.3f}, mu_ng={s['mu_ng_map']:.2f}, nu={s['nu_map']:.1f}, F={s['F_map']:.3f}")
-        print(f"  グリッド端の重み: lam={s['edge_lam']:.1e}, mu={s['edge_mu']:.1e}, nu={s['edge_nu']:.1e}")
-        #plot_loglik_contour(r,output)
+        output1 = os.path.join(outdir, f"fp_merginal_{event}{det}_{f}_{type}.png")
+        centers, hist, lo, hi, ul = fp_marginal_sampled(r, type, output1, f)
+        s["fp_ul95"] = float(ul)
+
+        status = []
+        if s["tail"] == "light":
+            status.append("light-tail(model mismatch)")
+        if s["fp_hi"] - s["fp_lo"] > 0.5:
+            status.append("unidentified(bimodal)")
+        s["status"] = ";".join(status)
+
+        print(f"{f:g}Hz FP={s['fp_mean']:.4f} [{s['fp_lo']:.4f}-{s['fp_hi']:.4f}]  95%上限={s['fp_ul95']:.4f}"
+              f"  (最尤点={s['fp_map']:.4f})  tail={s['tail']} (mean={s['y_mean']:.3f}, z={s['y_mean_z']:+.1f})"
+              f"  KS exp/fit={s['ks_exp']:.4f}/{s['ks_fit']:.4f}")
+        print(f"  lam={s['lam_map']:.3f}, mu_ng={s['mu_ng_map']:.2f}, nu={s['nu_map']:.1f}, F={s['F_map']:.3f}"
+              f"  グリッド端の重み: lam={s['edge_lam']:.1e}, mu={s['edge_mu']:.1e}, nu={s['edge_nu']:.1e}")
+        if s["status"]:
+            print(f"  ⚠ {s['status']}: この行の fp は数値として使わないでください")
+        if diag:
+            diagnose_band(yb, s, event, det, type, f,
+                          tb=None if t_arr is None else t_arr[mask], outdir=outdir)
         rows.append(s)
+
     df = pd.DataFrame(rows)
-    df.to_csv(f"{event}{det}_{type}_band_results_fracional_power_grid.csv",mode="a",index=False)
-    #print(f"保存: {event}{det}_band_results_fracional_power.csv  ({len(df)}行)")
+    path = os.path.join(outdir, f"{event}{det}_{type}_band_results_fracional_power_grid.csv")
+    # 帯域グループごとに呼ばれて追記されるので、ヘッダはファイルが無いときだけ書く
+    df.to_csv(path, mode="a", index=False, header=not os.path.exists(path))
+    return df
