@@ -18,3 +18,6 @@ image_phase/*
 background-test_L1_GW200129_065458_band_frac.py
 bayes/*
 band_GW191215/*
+outdir_injection2/*
+outdir_*
+image_*

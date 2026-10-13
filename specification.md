@@ -80,3 +80,9 @@ About wav.py(`wav.py`について)
 - F's prior is log uniform distribution
 - Plot the posterior distributions for each parameter (degrees of freedom $\nu$, expected value of the non-Gaussian component $\mu_{ng}$, and $F$) on a corner plot
 - Also plot the posterior distribution of the fractional power
+
+---
+About `top_tiles.py`
+
+- 巨大タイルのイベントがどの部分にあるかをCSVに出力します
+- Output a csv file about where big tiles exist
