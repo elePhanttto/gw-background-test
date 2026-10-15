@@ -508,3 +508,102 @@ def run_test_grid_freq(y, f_thinned, event, det, type, min_tiles=200, zoom=True,
     # 帯域グループごとに呼ばれて追記されるので、ヘッダはファイルが無いときだけ書く
     df.to_csv(path, mode="a", index=False, header=not os.path.exists(path))
     return df
+
+def thin_per_row(e_all, f_all, t_all, idx, rate):
+    """周波数行ごとに時刻順で間引く (行の取りこぼしが起きない)"""
+    keep = []
+    for f in np.unique(f_all[idx]):
+        r = idx[f_all[idx] == f]
+        r = r[np.argsort(t_all[r], kind="stable")]
+        keep.append(r[::rate])
+    return np.concatenate(keep)
+
+# ---------------------------------------------------------------------------
+# 局所PSDホワイトニング版 (PE と同じ「窓の直前 128 s の PSD」でホワイトニングする)
+# ---------------------------------------------------------------------------
+# 【なぜ必要か】従来版は 4096 s 全体の PSD で一括ホワイトニングしている。
+#  PE (bilby) は窓の直前 128 s から PSD を推定するので、ゆっくりした非定常性は
+#  PE 側では PSD に吸収される。PE が実際に見ている非ガウス性を測るには、
+#  背景テストのホワイトニング条件も PE に揃える必要がある。
+PSD_SPAN_LOCAL = 128.0   # PSD 推定に使う長さ [s] (pe_campaign.py の PSD_SPAN と同じ)
+PSD_GAP_LOCAL = 2.0      # 窓と PSD 区間の隙間 [s]
+PAD_LOCAL = 4.0          # ホワイトニングの端の影響を避ける余白 [s] (>= fduration/2)
+
+
+def local_white_segment(data, t, seg_duration, psd_span=PSD_SPAN_LOCAL, psd_gap=PSD_GAP_LOCAL,
+                        pad=PAD_LOCAL, fftlength=4, overlap=2, fduration=4):
+    """窓 [t, t+seg_duration] を、直前 psd_span 秒の median PSD でホワイトニングして返す。
+    PSD 区間か余白がデータ外なら None。"""
+    t0, t1 = float(data.span[0]), float(data.span[1])
+    if t - psd_gap - psd_span < t0 or t + seg_duration + pad > t1 or t - pad < t0:
+        return None
+    psd = data.crop(t - psd_gap - psd_span, t - psd_gap).psd(
+        fftlength=fftlength, overlap=overlap, method="median", window="hann")
+    ext = data.crop(t - pad, t + seg_duration + pad)
+    w = ext.whiten(asd=psd ** 0.5, fduration=fduration)
+    return w.crop(t, t + seg_duration)
+
+
+def collect_local_tiles(data, random_time, seg_duration, Q, BANDS):
+    """全窓 x 全帯域の Q タイルを局所PSDホワイトニングで集める。
+    窓ごとにホワイトニングは1回だけ行い、帯域ごとに q_gram を取る。
+    返り値: e[i], f[i], t[i] (帯域 i ごとの配列), used (使えた窓の開始時刻)"""
+    nb = len(BANDS)
+    e_l = [[] for _ in range(nb)]; f_l = [[] for _ in range(nb)]; t_l = [[] for _ in range(nb)]
+    used = []
+    for t in random_time:
+        w = local_white_segment(data, t, seg_duration)
+        if w is None:
+            continue
+        used.append(t)
+        for i, fmin, fmax in BANDS:
+            qg = w.q_gram(qrange=[Q, Q], frange=[fmin, fmax], snrthresh=0)
+            e_l[i].append(np.asarray(qg["energy"]))
+            f_l[i].append(np.asarray(qg["frequency"]))
+            t_l[i].append(np.asarray(qg["time"]))
+    e = [np.concatenate(x) for x in e_l]
+    f = [np.concatenate(x) for x in f_l]
+    tt = [np.concatenate(x) for x in t_l]
+    print(f"局所PSD版: 使えた窓 {len(used)}/{len(random_time)}")
+    return e, f, tt, np.asarray(used)
+
+
+def run_test_localpsd(data, random_time, seg_duration, Q, BANDS, rate_of_mabiki,
+                      event, det, type="real_localpsd", y_cut=100.0, seg_mean_cut=None,
+                      geocent_time=None):
+    """局所PSD版の背景テスト。
+    1) 全帯域のタイルを集める
+    2) y > y_cut のタイルを含む窓を「過渡ノイズ窓」として除く (全帯域の和集合)
+    3) seg_mean_cut を与えると、窓平均 y がそれを超える窓も「エピソード窓」として除く
+    4) 周波数行ごとに時刻順で間引いて run_test_grid_freq に渡す
+    CSV の type は  {type}_all (除外なし) と {type}_clean (除外後) の2種類。"""
+    e, f, tt, rt = collect_local_tiles(data, random_time, seg_duration, Q, BANDS)
+
+    bad = set(); epi = set()
+    for i, fmin, fmax in BANDS:
+        y_all = e[i] * np.log(2.0)
+        seg_all = np.searchsorted(rt, tt[i], side="right") - 1
+        bad |= set(np.unique(seg_all[y_all > y_cut]).tolist())
+        if seg_mean_cut is not None:
+            for s in range(rt.size):
+                m = seg_all == s
+                if m.any() and y_all[m].mean() > seg_mean_cut:
+                    epi.add(s)
+    bad = sorted(bad); epi = sorted(epi - set(bad))
+    t_ref = 0.0 if geocent_time is None else geocent_time
+    print(f"[{type}] 過渡ノイズ窓: {len(bad)}/{rt.size}  "
+          + ", ".join(f"{rt[s]-t_ref:+.1f}s" for s in bad))
+    if seg_mean_cut is not None:
+        print(f"[{type}] エピソード窓 (窓平均y>{seg_mean_cut}): {len(epi)}/{rt.size}")
+
+    for i, fmin, fmax in BANDS:
+        seg_all = np.searchsorted(rt, tt[i], side="right") - 1
+        idx_all = thin_per_row(e[i], f[i], tt[i], np.arange(e[i].size), rate_of_mabiki[i])
+        run_test_grid_freq(e[i][idx_all] * np.log(2.0), f[i][idx_all], event, det,
+                           type=f"{type}_all")
+        drop = list(bad) + list(epi)
+        idx = np.where(~np.isin(seg_all, drop))[0]
+        idx = thin_per_row(e[i], f[i], tt[i], idx, rate_of_mabiki[i])
+        run_test_grid_freq(e[i][idx] * np.log(2.0), f[i][idx], event, det,
+                           type=f"{type}_clean")
+    return dict(rt=rt, bad=bad, episode=epi)

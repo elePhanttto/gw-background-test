@@ -1,5 +1,5 @@
 # https://journals.aps.org/prd/abstract/10.1103/PhysRevD.108.063016 のテストを再現するヨ!
-# パラメータをまんべんなく探すグリッドサーチ版(FはlogFで一様になる分布)
+# PSD→ホワイトニングの条件をPEに揃える
 
 from gwpy.timeseries import TimeSeries
 from scipy import stats
@@ -13,13 +13,14 @@ from bgtest_func_frac import *
 import pymc as pm
 from pymc import *
 from bgtest_grid import *
+from top_tiles import *
 
-event = "GW191215_223052_" #イベント名
+event = "GW200129_065458_" #イベント名
 det = "L1" #検出器
 output1 = event + "L1_avg_tilepower.png" #average tile power
 output2 = event  + det + "fractional_power.png" #fractional power
 
-geocent_time = 1260484270.3 #ここではGW191215_223052の合体時刻!
+geocent_time = 1264316116.4 #ここではGW200129_065458の合体時刻!
 exclude_time = 11 #除外する前後の区間
 duration_time = 4096 #調べる区間!
 duration_time_half = 2048 #前後2048秒
@@ -29,7 +30,7 @@ skipped = 0
 skipped_sim = 0
 auto_correlation_list = []
 n_seg_half = 100 #セグメントの数
-seg_duration = 2.0 #セグメントの期間
+seg_duration = 8.0 #セグメントの期間
 #BANDS = [(0,30, 80), (1,80, 120), (2,120, 250), (3,250, 500)] #周波数ごとに分けて解析
 BANDS = [(0,30,40),(1,40,50),(2,50,60),(3,60,80)]
 Q = 8 #q-transformのQ値．どんな異常を見たいかで変える
@@ -44,12 +45,12 @@ for j in range(0,n_seg_half):
     second = n * j + (geocent_time + exclude_time)
     random_time.append(second)
 
-data_L1 = TimeSeries.read("hdf5/L-L1_GWOSC_4KHZ_R1-1260482223-4096.hdf5",format="hdf5.gwosc") #gwoscからデータを入れておいてください!
+data_L1 = TimeSeries.read("hdf5/L-L1_GWOSC_4KHZ_R1-1264314069-4096.hdf5",format="hdf5.gwosc") #gwoscからデータを入れておいてください!
 
 # NaNのない範囲を特定(合体前からの連続した区間を選ぶ)
 valid = ~np.isnan(data_L1.value)
 invalid = np.isnan(data_L1.value) #nanの部分
-deltat = 1/4000 #周波数は4000Hz
+deltat = 1/4096 #周波数は4000Hz
 
 if not valid.all():
     times = data_L1.times.value
@@ -73,7 +74,7 @@ if not valid.all():
 print(f"最大時間{max(random_time)}")
 print(f"最小時間{min(random_time)}")
 
-white = data_L1.whiten(fftlength=4, overlap=2,fduration=2) #ホワイトニング．ここではあえてfduration=2
+white = data_L1.whiten(fftlength=4, overlap=2,fduration=4) #ホワイトニング．ここではあえてfduration=4
 
 # ホワイトニング後の実際の範囲に収まるセグメントだけを残す
 # (NaNが無いとNaNチェックのブロックが丸ごとスキップされ、
@@ -92,7 +93,7 @@ print(f"最小時間{min(random_time)}")
 #シミュレーションデータ
 # --- 合成ガウスノイズ（1つ目のセグメント）---
 sim = generate_PSD_gauss(data_L1)
-white_sim = sim.whiten(fftlength=4, overlap=2,fduration=2) #Q値に応じて，fftlength,fdurationも変えるべき
+white_sim = sim.whiten(fftlength=4, overlap=2,fduration=4) #Q値に応じて，fftlength,fdurationも変えるべき
 
 seg_sim = white_sim.crop(random_time[2],random_time[2] + seg_duration)
 
@@ -116,7 +117,7 @@ A2_null = [None] * 4
 # まず1つ目のセグメントでタイル数を確認
 
 for i,fmin,fmax in BANDS:
-    _seg0 = white.crop(random_time[0], random_time[0] + 2.0)
+    _seg0 = white.crop(random_time[0], random_time[0] + seg_duration)
     _qg0 = _seg0.q_gram(qrange=[Q,Q], frange=[fmin, fmax], snrthresh=0)
     t_tile = np.asarray(_qg0["time"])
     e_tile = np.asarray(_qg0["energy"])
@@ -146,6 +147,8 @@ fp_m = [[] for _ in range(4)]
 fp_l = [[] for _ in range(4)]
 fp_h = [[] for _ in range(4)]
 
+time_big_tiles = [[] for _ in range(4)] #巨大タイルのある時刻
+
 f_thinned_sim = [[] for _ in range(4)]
 y_norm_sim = [[] for _ in range(4)]
 y_sim = [[] for _ in range(4)]
@@ -173,5 +176,56 @@ window_time[1] = geocent_time + t_center + window_duration #注目するとこ�
 for i,fmin,fmax in BANDS:
     y_norm[i],e_tile[i],f_tile[i],t_tile[i],unique_freqs[i],avg_power_by_freq[i],std_power_by_freq[i],y[i],f_thinned[i]= run_test_band_qavg(Q,random_time,white,skipped,geocent_time,rate_of_mabiki[i],fmin,fmax,seg_duration)
     run_test_grid_freq(y[i],f_thinned[i],event,det,type="real")
+    report_top_tiles(e_tile[i], f_tile[i], t_tile[i], random_time, geocent_time,event,det,y_cut=100.0, gap=1.0, label=f"{fmin}-{fmax}Hz",outdir=".")
+    #keep = y[i][:] < 100.0
+    #run_test_grid_freq(y[i][keep], f_thinned[i][keep], event, det, type="real_cut100")
+    
+    for f in np.unique(f_thinned[i]):
+        yb = y[i][f_thinned[i] == f]
+        print(f"{f:g}Hz N={len(yb)} top8={np.round(np.sort(yb)[::-1][:8], 1)} "
+          f"y>10/15/20 の期待={[round(len(yb)*np.exp(-c), 2) for c in (10, 15, 20)]} "
+          f"実測={[(yb > c).sum() for c in (10, 15, 20)]}")
     y_norm_sim[i],e_tile_sim[i],f_tile_sim[i],t_tile_sim[i],unique_freqs_sim[i],avg_power_by_freq_sim[i],std_power_by_freq_sim[i],y_sim[i],f_thinned_sim[i]= run_test_band_qavg(Q,random_time,white_sim,skipped,geocent_time,rate_of_mabiki[i],fmin,fmax,seg_duration)
     run_test_grid_freq(y_sim[i],f_thinned_sim[i],event,det,type="sim")
+    for f in np.unique(f_thinned[i]):
+        yb = y[i][f_thinned[i] == f]
+        print(f"{f:g}Hz N={len(yb)} top8={np.round(np.sort(yb)[::-1][:8], 1)} "
+          f"y>10/15/20 の期待={[round(len(yb)*np.exp(-c), 2) for c in (10, 15, 20)]} "
+          f"実測={[(yb > c).sum() for c in (10, 15, 20)]}")
+
+rt = np.asarray(random_time)
+Y_CUT = 100.0
+
+# 全帯域で y > Y_CUT のタイルを含む seg を集める (和集合)
+bad_segs = set()
+for i, fmin, fmax in BANDS:
+    t_all = np.asarray(t_tile[i]); y_all = np.asarray(e_tile[i]) * np.log(2.0)
+    seg_all = np.searchsorted(rt, t_all, side="right") - 1
+    bad_segs |= set(np.unique(seg_all[y_all > Y_CUT]).tolist())
+bad_segs = sorted(bad_segs)
+print(f"汚染窓: {bad_segs}  ({len(bad_segs)}/{len(rt)})")
+for s in bad_segs:
+    print(f"  seg#{s}: t-t_merger = {rt[s] - geocent_time:+.1f} s")
+
+for i, fmin, fmax in BANDS:
+    f_all = np.asarray(f_tile[i]); e_all = np.asarray(e_tile[i]); t_all = np.asarray(t_tile[i])
+    seg_all = np.searchsorted(rt, t_all, side="right") - 1
+    idx = np.where(~np.isin(seg_all, bad_segs))[0]
+    idx = thin_per_row(e_all, f_all, t_all, idx, rate_of_mabiki[i])
+    run_test_grid_freq(e_all[idx] * np.log(2.0), f_all[idx], event, det, type="real_clean")
+# ===========================================================================
+# 局所PSDホワイトニング版 (PE と同じ: 窓の直前 128 s の PSD でホワイトニング)
+# 出力 CSV: *_real_localpsd_all / *_real_localpsd_clean / *_sim_localpsd_all / *_sim_localpsd_clean
+# 窓ごとに PSD を推定するので、従来版より数倍時間がかかります。
+# ===========================================================================
+RUN_LOCALPSD = True
+SEG_MEAN_CUT = None      # 例: 1.5 にするとエピソード窓 (窓平均 y > 1.5) も除外
+
+if RUN_LOCALPSD:
+    res_loc = run_test_localpsd(data_L1, random_time, seg_duration, Q, BANDS, rate_of_mabiki,
+                                event, det, type="real_localpsd", y_cut=Y_CUT,
+                                seg_mean_cut=SEG_MEAN_CUT, geocent_time=geocent_time)
+    # 対照: 合成ガウスも同じ手順で (y_mean≈1, fp≈0.01-0.02 になれば手順は正しい)
+    res_loc_sim = run_test_localpsd(sim, random_time, seg_duration, Q, BANDS, rate_of_mabiki,
+                                    event, det, type="sim_localpsd", y_cut=Y_CUT,
+                                    seg_mean_cut=SEG_MEAN_CUT, geocent_time=geocent_time)

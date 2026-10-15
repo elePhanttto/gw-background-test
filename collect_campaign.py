@@ -1,4 +1,3 @@
-#claude製
 #!/usr/bin/env python
 """campaign/*/*/w*/summary.json を集計し、real と gauss のペア比較を
 背景テストの非ガウス性指標 (dlogL_exp / 1000タイル, fp) と並べる。"""
@@ -16,8 +15,8 @@ FBAND = (30.0, 60.0)    # 信号がSNRを稼ぐ帯域で非ガウス性を平均
 
 # 背景テストの CSV (汚染窓を除いた版, PE と同じ検出器)
 FP_CSV = {
-    "GW200129": "GW200129_065458_L1_real_no_seg126_thin_band_results_fracional_power_grid.csv",
-    "GW190412": "GW190412_L1_real_no_seg55_band_results_fracional_power_grid.csv",
+    "GW200129": "GW200129_065458_L1_real_clean_band_results_fracional_power_grid.csv",
+    "GW190412": "GW190412_L1_real_no_seg55_thin_band_results_fracional_power_grid.csv",
 }
 
 
@@ -41,10 +40,10 @@ def load_runs():
 
 def background_metric(event):
     df = pd.read_csv(FP_CSV[event]).drop_duplicates(subset=["freqs"], keep="last")
-    m = (df.freqs >= FBAND[0]) & (df.freqs <= FBAND[1])
-    d = df[m]
-    # セグメント長 (2 s / 8 s) でタイル数が違うので、1000 タイルあたりに規格化
-    return dict(dlogL_per1k=float(np.mean(d.dlogL_exp / d.n_tiles * 1000)),
+    d = df[(df.freqs >= FBAND[0]) & (df.freqs <= FBAND[1])]
+    w = d.n_tiles / d.n_tiles.sum()                       # タイル数で重み付け
+    return dict(excess_power=float(np.sum(w * (d.y_mean - 1.0))),
+                dlogL_per1k=float(np.mean(d.dlogL_exp / d.n_tiles * 1000)),
                 fp_mean=float(d.fp_mean.mean()))
 
 
