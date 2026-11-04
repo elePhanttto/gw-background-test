@@ -16,8 +16,10 @@
   python pe_campaign.py --event GW200129_065458 --autoprior 300
   # 2) 1 run
   python pe_campaign.py --event GW200129 --window 0 --noise real
+  # 2b) PSD推定誤差の対照: 合成ガウスを作り、real と同じ手順で PSD を推定し直す
+  python pe_campaign.py --event GW200129_065458 --window 0 --noise gauss_est
   # 3) 並列 (npool=1 を10本同時)
-  for n in real gauss; do seq 0 19 | xargs -P 10 -I{} python pe_campaign.py --event GW200129 --window {} --noise $n; done
+  for n in real gauss gauss_est; do seq 0 19 | xargs -P 10 -I{} python pe_campaign.py --event GW200129 --window {} --noise $n; done
 """
 import os
 os.environ.setdefault("OMP_NUM_THREADS", "1")
@@ -171,6 +173,26 @@ def make_gauss_noise_ifo_like(real_ifo, det, seed):
     return ifo
 
 
+def make_gauss_est_ifo(real_ifo, det, seed, t_c, margin=4.0):
+    """真のPSD = 実データの局所PSD で、PSD区間ごと長い合成ガウスノイズを作り、
+    real とまったく同じ手順 (直前128 s の median Welch) で PSD を推定し直す。
+    → gauss_est と gauss の差 = PSD推定誤差の効果
+       real と gauss_est の差 = ノイズの非ガウス性(+非定常性)の効果"""
+    t_end = t_c + POST
+    t_start = t_end - DURATION
+    t0 = t_start - PSD_GAP - PSD_SPAN - margin
+    T = (t_end + margin) - t0                      # 146 s (FS=2048 なら整数サンプル)
+    bilby.core.utils.random.seed(seed)
+    tmp = bilby.gw.detector.get_empty_interferometer(det)
+    tmp.minimum_frequency = real_ifo.minimum_frequency
+    tmp.maximum_frequency = real_ifo.maximum_frequency
+    tmp.power_spectral_density = real_ifo.power_spectral_density
+    tmp.set_strain_data_from_power_spectral_density(
+        sampling_frequency=FS, duration=T, start_time=t0)
+    sim = TimeSeries(tmp.strain_data.time_domain_strain, t0=t0, sample_rate=FS)
+    return make_real_noise_ifo(sim, det, t_c)       # 切り出しと PSD 推定は real と同一
+
+
 def make_waveform_generator():
     return bilby.gw.WaveformGenerator(
         duration=DURATION, sampling_frequency=FS,
@@ -241,6 +263,8 @@ def run_one(event, i, noise, outroot="campaign"):
     ifo_real = make_real_noise_ifo(data, ev["det"], t_c)
     if noise == "real":
         ifo = ifo_real
+    elif noise == "gauss_est":
+        ifo = make_gauss_est_ifo(ifo_real, ev["det"], seed=50000 + i, t_c=t_c)
     else:
         ifo = make_gauss_noise_ifo_like(ifo_real, ev["det"], seed=50000 + i)
 
@@ -388,7 +412,7 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--event", required=True)
     ap.add_argument("--window", type=int)
-    ap.add_argument("--noise", choices=["real", "gauss"])
+    ap.add_argument("--noise", choices=["real", "gauss", "gauss_est"])
     ap.add_argument("--outroot", default="campaign")
     ap.add_argument("--list", action="store_true", help="窓と汚染率を表示して終了")
     ap.add_argument("--survey", type=int, default=0, help="SNR分布の下見 (個数)")
@@ -402,4 +426,6 @@ if __name__ == "__main__":
     elif a.survey:
         survey_snr(a.event, a.survey)
     else:
+        if a.window is None or a.noise is None:
+            ap.error("PE を走らせるには --window と --noise が必要です")
         run_one(a.event, a.window, a.noise, a.outroot)

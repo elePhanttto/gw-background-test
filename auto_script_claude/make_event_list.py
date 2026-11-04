@@ -65,10 +65,21 @@ def main():
         except Exception as e:
             print(f"  skip {name}: {e}")
 
+    # 既存の events.csv の prior 列を引き継ぐ (無ければ priors/{name}.prior を探す)
+    old = {}
+    if os.path.exists(a.out):
+        for r in csv.DictReader(open(a.out)):
+            if r.get("prior"):
+                old[r["name"]] = r["prior"]
+    for r in rows:
+        auto = f"priors/{r['name']}.prior"
+        r["prior"] = old.get(r["name"]) or (auto if os.path.exists(auto) else "")
+
     with open(a.out, "w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=["name", "gps", "det", "file", "catalog"])
+        w = csv.DictWriter(f, fieldnames=["name", "gps", "det", "file", "catalog", "prior"])
         w.writeheader(); w.writerows(rows)
-    print(f"-> {a.out}: {len(rows)} イベント")
+    n_prior = sum(bool(r["prior"]) for r in rows)
+    print(f"-> {a.out}: {len(rows)} イベント (prior 設定済み {n_prior})")
 
 
 if __name__ == "__main__":

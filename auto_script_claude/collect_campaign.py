@@ -6,6 +6,8 @@
   python collect_campaign.py                 # summary.json から集計 (campaign_all.csv も更新)
   python collect_campaign.py --from-csv      # 既存の campaign_all.csv から集計だけやり直す
   python collect_campaign.py --x fp          # 横軸: fp (既定) / excess / dlogL
+  python collect_campaign.py --y mad         # 縦軸: ratio (std比, 既定) / mad (MAD-std比) / dcov (cov90の差)
+  python collect_campaign.py --ref gauss --cmp gauss_est   # 比べる2条件 (A=ref, B=cmp)
 """
 import argparse
 import glob
@@ -95,19 +97,54 @@ def paired_bootstrap_ratio(zA, zB, rng, n_boot=N_BOOT):
     return np.percentile(r, [2.5, 16, 84, 97.5])
 
 
-def summarize(df):
+MAD_K = 1.4826   # 正規分布なら MAD*1.4826 = std
+
+
+def mad_std(z, axis=None):
+    """外れ値に強い std (正規分布なら std と一致)"""
+    z = np.asarray(z, float)
+    med = np.median(z, axis=axis, keepdims=True)
+    return MAD_K * np.median(np.abs(z - med), axis=axis)
+
+
+def paired_bootstrap_mad(zA, zB, rng, n_boot=N_BOOT):
+    """MAD-std(zB)/MAD-std(zA) の区間 (窓ペアごと再標本化)"""
+    n = len(zA)
+    j = rng.integers(0, n, size=(n_boot, n))
+    r = mad_std(zB[j], axis=1) / mad_std(zA[j], axis=1)
+    r = r[np.isfinite(r)]
+    return np.percentile(r, [2.5, 16, 84, 97.5])
+
+
+def paired_bootstrap_dcov(cA, cB, rng, n_boot=N_BOOT):
+    """cov90(B) - cov90(A) の区間 (窓ペアごと再標本化)"""
+    n = len(cA)
+    j = rng.integers(0, n, size=(n_boot, n))
+    d = cB[j].mean(axis=1) - cA[j].mean(axis=1)
+    return np.percentile(d, [2.5, 16, 84, 97.5])
+
+
+def summarize(df, ref="gauss", cmp="real"):
     rng = np.random.default_rng(0)
     out = []
     for ev, g in df.groupby("event"):
-        A = g[g.noise == "gauss"].set_index("window")
-        B = g[g.noise == "real"].set_index("window")
+        A = g[g.noise == ref].set_index("window")
+        B = g[g.noise == cmp].set_index("window")
         idx = A.index.intersection(B.index)
+        if len(idx) < 5:
+            continue
         A, B = A.loc[idx], B.loc[idx]
         bg = background_metric(ev) if fp_csv_path(ev) else {}
         hit = g.n_hit.iloc[0] / g.n_windows.iloc[0]
         for k in FREE:
             zA, zB = A[f"z_{k}"].values, B[f"z_{k}"].values
             q = paired_bootstrap_ratio(zA, zB, rng)
+            # 外れ値に強い指標
+            qm = paired_bootstrap_mad(zA, zB, rng)
+            cA = A[f"in90_{k}"].values.astype(float)
+            cB = B[f"in90_{k}"].values.astype(float)
+            qc = paired_bootstrap_dcov(cA, cB, rng)
+            pA, pB = A[f"p_{k}"].values, B[f"p_{k}"].values
             out.append(dict(
                 event=ev, param=k, N=len(idx), contam_rate=hit, **bg,
                 snr_check=float(np.max(np.abs(A.snr - B.snr))),
@@ -121,47 +158,84 @@ def summarize(df):
                 ks_p_B=stats.kstest(B[f"p_{k}"], "uniform").pvalue,
                 width_ratio_med=float(np.median(B[f"w90_{k}"] / A[f"w90_{k}"])),
                 absz_wilcoxon_p=(stats.wilcoxon(np.abs(zB), np.abs(zA)).pvalue
-                                 if len(idx) > 5 else np.nan)))
+                                 if len(idx) > 5 else np.nan),
+                mad_ratio=mad_std(zB) / mad_std(zA),
+                mad_lo95=qm[0], mad_lo68=qm[1], mad_hi68=qm[2], mad_hi95=qm[3],
+                dcov90=cB.mean() - cA.mean(),
+                dcov90_lo95=qc[0], dcov90_lo68=qc[1], dcov90_hi68=qc[2], dcov90_hi95=qc[3],
+                ks_D_A=stats.kstest(pA, "uniform").statistic,
+                ks_D_B=stats.kstest(pB, "uniform").statistic,
+                ks2_p=stats.ks_2samp(pA, pB).pvalue,
+                n_outlier_A=int(np.sum(np.abs(zA) > 4)),
+                n_outlier_B=int(np.sum(np.abs(zB) > 4))))
     return pd.DataFrame(out)
 
 
-def plot(s, xkey, fname):
+YDEF = {   # 中央値, 68%下, 68%上, 95%下, 95%上, 基準線, ラベル
+    "ratio": ("ratio", "ratio_lo68", "ratio_hi68", "ratio_lo95", "ratio_hi95", 1.0, "std(z) {B} / {A}"),
+    "mad":   ("mad_ratio", "mad_lo68", "mad_hi68", "mad_lo95", "mad_hi95", 1.0, "MAD-std(z) {B} / {A}"),
+    "dcov":  ("dcov90", "dcov90_lo68", "dcov90_hi68", "dcov90_lo95", "dcov90_hi95", 0.0,
+              "cov90({B}) - cov90({A})"),
+}
+
+
+def plot(s, xkey, fname, ykey="ratio", ref="gauss", cmp="real"):
+    yc, l68, h68, l95, h95, base, ylab = YDEF[ykey]
     fig, axes = plt.subplots(1, len(FREE), figsize=(4 * len(FREE), 3.6), sharex=True)
     for ax, k in zip(axes, FREE):
         sk = s[s.param == k]
         x, xe = sk[xkey].values, sk[f"{xkey}_err"].values
-        y = sk.ratio.values
-        yerr = np.vstack([y - sk.ratio_lo68.values, sk.ratio_hi68.values - y])     # 68% (1σ相当)
+        y = sk[yc].values
+        yerr = np.vstack([y - sk[l68].values, sk[h68].values - y])     # 68% (1σ相当)
+        yerr = np.clip(yerr, 0, None)
         ax.errorbar(x, y, xerr=xe, yerr=yerr, fmt="o", capsize=3)
-        ax.vlines(x, sk.ratio_lo95, sk.ratio_hi95, color="C0", alpha=0.3, lw=6)    # 95% は太い薄線
+        ax.vlines(x, sk[l95], sk[h95], color="C0", alpha=0.3, lw=6)    # 95% は太い薄線
         if len(sk) <= 12:                                   # イベントが多いときはラベルを省略
             for xi, yi, e in zip(x, y, sk.event):
                 ax.annotate(e, (xi, yi), fontsize=8, xytext=(4, 4), textcoords="offset points")
-        ax.axhline(1.0, color="gray", ls="--")
+        ax.axhline(base, color="gray", ls="--")
         ax.set_title(k)
         ax.set_xlabel(XLABEL[xkey], fontsize=8)
-    axes[0].set_ylabel("std(z) real / gauss\n(bar: 68%, band: 95% bootstrap)")
+    axes[0].set_ylabel(ylab.format(A=ref, B=cmp) + "\n(bar: 68%, band: 95% bootstrap)")
     fig.tight_layout()
     fig.savefig(fname, dpi=150)
+    plt.close(fig)
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--from-csv", action="store_true")
     ap.add_argument("--x", choices=["fp", "excess", "dlogL"], default="fp")
+    ap.add_argument("--y", choices=list(YDEF), default="ratio")
+    ap.add_argument("--ref", default="gauss", help="基準 (A)")
+    ap.add_argument("--cmp", default="real", help="比べる側 (B)")
     a = ap.parse_args()
     df = pd.read_csv("campaign_all.csv") if a.from_csv else load_runs()
     if not a.from_csv:
         df.to_csv("campaign_all.csv", index=False)
-    s = summarize(df)
-    s.to_csv("campaign_summary.csv", index=False)
-    cols = ["event", "param", "N", a.x, f"{a.x}_err", "ratio", "ratio_lo95", "ratio_hi95",
-            "cov90_A", "cov90_B", "frac_snr_lt8"]
-    print(s[cols].round(3).to_string())
-    if a.x == "fp":
+    s = summarize(df, a.ref, a.cmp)
+    if s.empty:
+        print(f"{a.cmp} と {a.ref} のペアが5組以上あるイベントがありません")
+        return
+    tag = "" if (a.ref, a.cmp) == ("gauss", "real") else f"_{a.cmp}_vs_{a.ref}"
+    s.to_csv(f"campaign_summary{tag}.csv", index=False)
+    yc, _, _, l95, h95, base, _ = YDEF[a.y]
+    cols = ["event", "param", "N", a.x, f"{a.x}_err", yc, l95, h95,
+            "cov90_A", "cov90_B", "n_outlier_A", "n_outlier_B", "frac_snr_lt8"]
+    print(s[[c for c in cols if c in s]].round(3).to_string())
+    if a.x == "fp" and "fp_rows_used" in s:
         print(s.groupby("event")[["fp_rows_used", "fp_rows_total"]].first()
               .rename(columns={"fp_rows_used": "fp に使った行", "fp_rows_total": "30-60Hz の行"}))
-    plot(s, a.x, f"campaign_vs_background_{a.x}.png")
+    # 全イベントまとめた要約 (外れ値の数と、指標が基準より悪い側にあるイベント数)
+    print("\n--- パラメータごとの要約 ---")
+    for k, sk in s.groupby("param", sort=False):
+        worse = (sk[yc] > base).sum() if a.y != "dcov" else (sk[yc] < base).sum()
+        print(f"{k:20s} 中央値 {yc}={sk[yc].median():.3f}  悪い側 {worse}/{len(sk)}  "
+              f"|z|>4: {a.ref} {sk.n_outlier_A.sum()} / {a.cmp} {sk.n_outlier_B.sum()}")
+    if a.x in s:
+        plot(s, a.x, f"campaign_vs_background{tag}_{a.x}_{a.y}.png", a.y, a.ref, a.cmp)
+    else:
+        print(f"背景指標 {a.x} が無いので図は省略")
 
 
 if __name__ == "__main__":

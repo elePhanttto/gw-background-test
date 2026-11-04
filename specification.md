@@ -86,3 +86,27 @@ About `top_tiles.py`
 
 - 巨大タイルのイベントがどの部分にあるかをCSVに出力します
 - Output a csv file about where big tiles exist
+
+---
+
+About `auto-script-claude`
+
+- 多数のイベントについて背景テストとパラメータ推定を行います
+- 詳しくは`auto-script-claude/README.md`を読んでください
+- Do parameter estimation and background test of many events
+- Read auto-script-claude/README.md
+
+---
+
+About `z_test/z_t_test.py`
+
+- `auto-script-claude`でパラメータ推定+背景テストを行った結果(`campaign_all.csv`)をベースに，イベントごとのzの平均値・標準偏差を調べます
+- 背景ノイズの状態(real vs gauss_est,gauss_est vs gauss)について，zの平均値・標準偏差のt検定を行います
+- Investigate mean and std of z based on results of parameter estimation and background test on `auto-script-claude ` (campaign_all.csv`)
+- Do t test on mean and std of z about background noise status(real vs gauss_est,gauss_est vs gauss)
+
+$z = \frac{|x-u|}{\sigma}$
+
+- $x$ is median
+- $u$ is true value
+- $\sigma$ is standard deviation
