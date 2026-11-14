@@ -221,7 +221,7 @@ def plot_loglik_contour(r,output,ax=None):
     ax.set_xscale("log"); ax.set_yscale("log")
     ax.set_xlabel("nu"); ax.set_ylabel("mu_ng")
     ax.set_title(f"Cross-section at lam={r['lam_grid'][i]:.3f}, F={r['F_grid'][l]:.3f} ")
-    fig.savefig(output)
+    #fig.savefig(output)
 
 def grid_posterior_3d(r):
     """grid_fp の結果 r から (F, mu_ng, nu) の3次元事後分布を取り出す。
@@ -330,7 +330,7 @@ def fp_marginal(post, F_grid, mu_grid, nu_grid, mu_g, type, output1,freq, bins=1
     ax.set_title(f"fractional power posterior at freq={freq} Hz")
     ax.set_xlim((0.0,1.0))
     ax.legend()
-    fig.savefig(output1, dpi=150)
+    #fig.savefig(output1, dpi=150)
     plt.close(fig)                                        # ループで大量に作るのでメモリ対策
     return centers, hist, lo, hi
 
@@ -352,7 +352,7 @@ def fp_marginal_sampled(r, type, output1, freq, bins=100, n_samp=200_000, seed=0
     ax.set_title(f"fractional power posterior at freq={freq} Hz")
     ax.set_xlim((0.0,1.0))
     ax.legend()
-    fig.savefig(output1, dpi=150)
+    #fig.savefig(output1, dpi=150)
     plt.close(fig)
     return centers, hist, lo, hi, ul
 
@@ -435,7 +435,7 @@ def diagnose_band(yb, s, event, det, type, f, tb=None, n_chunk=40, outdir="."):
 
     fig.suptitle(f"{event} {det} {f} Hz  fp={s['fp_mean']:.3f}  status={s.get('status','')}", fontsize=10)
     fig.tight_layout()
-    fig.savefig(os.path.join(outdir, f"diag_{event}{det}_{f}_{type}.png"), dpi=130)
+    #fig.savefig(os.path.join(outdir, f"diag_{event}{det}_{f}_{type}.png"), dpi=130)
     plt.close(fig)
 
 
@@ -478,7 +478,7 @@ def run_test_grid_freq(y, f_thinned, event, det, type, min_tiles=200, zoom=True,
         post, Fg, Mg, Ng = grid_posterior_3d(r)
         fig = corner_from_grid(post, Fg, Mg, Ng)
         fig.suptitle(f"{event} {det}  f={f}Hz")
-        fig.savefig(os.path.join(outdir, f"corner_{event}{det}_{f}_{type}.png"), dpi=150)
+        #fig.savefig(os.path.join(outdir, f"corner_{event}{det}_{f}_{type}.png"), dpi=150)
         plt.close(fig)
         output1 = os.path.join(outdir, f"fp_merginal_{event}{det}_{f}_{type}.png")
         centers, hist, lo, hi, ul = fp_marginal_sampled(r, type, output1, f)
@@ -538,7 +538,7 @@ def local_white_segment(data, t, seg_duration, psd_span=PSD_SPAN_LOCAL, psd_gap=
     if t - psd_gap - psd_span < t0 or t + seg_duration + pad > t1 or t - pad < t0:
         return None
     psd = data.crop(t - psd_gap - psd_span, t - psd_gap).psd(
-        fftlength=fftlength, overlap=overlap, method="median", window="hann")
+        fftlength=8, overlap=4, method="median", window=("tukey", 0.1))   # PE と同じ設定に
     ext = data.crop(t - pad, t + seg_duration + pad)
     w = ext.whiten(asd=psd ** 0.5, fduration=fduration)
     return w.crop(t, t + seg_duration)

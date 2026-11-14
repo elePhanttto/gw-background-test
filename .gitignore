@@ -24,3 +24,4 @@ image_*
 z_test/covcurve.py
 z_test/ks_pp_test.py
 z_test/plot_z_distribution.py
+*.xlsx

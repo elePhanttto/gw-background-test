@@ -100,13 +100,31 @@ About `auto-script-claude`
 
 About `z_test/z_t_test.py`
 
-- `auto-script-claude`でパラメータ推定+背景テストを行った結果(`campaign_all.csv`)をベースに，イベントごとのzの平均値・標準偏差を調べます
-- 背景ノイズの状態(real vs gauss_est,gauss_est vs gauss)について，zの平均値・標準偏差のt検定を行います
+- `auto-script-claude`でパラメータ推定+背景テストを行った結果(`campaign_all.csv`)をベースに，イベントごとの各統計量の平均値・標準偏差を調べます
+- 背景ノイズの状態(real vs gauss_est,gauss_est vs gauss)について，各統計量の平均値・標準偏差のt検定を行います
 - Investigate mean and std of z based on results of parameter estimation and background test on `auto-script-claude ` (campaign_all.csv`)
 - Do t test on mean and std of z about background noise status(real vs gauss_est,gauss_est vs gauss)
 
-$z = \frac{|x-u|}{\sigma}$
+各統計量について About statistics
 
-- $x$ is median
-- $u$ is true value
-- $\sigma$ is standard deviation
+1. $z = \frac{|x-u|}{\sigma}$
+   1. $x$ is median
+   2. $u$ is true value
+   3. $\sigma$ is standard deviation of posterior
+2. $post_std = \sigma$
+3. $post_skew = \frac{\mu_3}{\sigma^3}$
+   1. It describes posterior asymmetry
+   2. $\mu_n = mean((X-\bar(X))^n)$
+   3. $X$ is a sample
+   4. $\bar(X)$ is mean of posterior
+4. $post_kurt = \frac{\mu_4}{\sigma^4} -3$
+   1. It describes weight at the tails of posterior
+
+---
+
+About `zure.py`
+
+- 各窓のホワイトニング後の背景ノイズ(real,gauss_est,gauss)の分散(ホワイトノイズであればPSDを$S$として，$sigma^2 = \frac{ST}{2}$が期待される)を計算
+- この分散の比とzの分散の比(real/gauss_est)を調べる
+- Calculate the variance of the background noise (real, gauss_est, gauss) after whitening for each window (for white noise, where the PSD is denoted by $S$, $sigma^2 = \frac{ST}{2}$ is expected)
+- Examine the ratio of this variance to the variance of $z$ (real/gauss_est)

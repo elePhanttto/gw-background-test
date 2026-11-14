@@ -8,6 +8,8 @@
   python collect_campaign.py --x fp          # 横軸: fp (既定) / excess / dlogL
   python collect_campaign.py --y mad         # 縦軸: ratio (std比, 既定) / mad (MAD-std比) / dcov (cov90の差)
   python collect_campaign.py --ref gauss --cmp gauss_est   # 比べる2条件 (A=ref, B=cmp)
+
+結果ファイルを約6900本読むので、数十分〜1時間程度かかるかもしれません。最初に python collect_campaign.py --posterior を1回だけ実行して campaign_all.csv を作り直しておけば、あとは --from-csv で一瞬で集計できます。
 """
 import argparse
 import glob
@@ -18,6 +20,28 @@ from scipy import stats
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+import os
+
+def posterior_stats(outdir):
+    """Bilby の結果ファイルから事後分布の統計量を計算する。見つからなければ空の dict を返す。"""
+    cand = glob.glob(os.path.join(outdir, "pe_result.*"))
+    if not cand:
+        return {}
+    import bilby
+    post = bilby.result.read_in_result(cand[0]).posterior
+    out = {}
+    for k in FREE:
+        x = post[k].values
+        out[f"post_med_{k}"] = float(np.median(x))
+        out[f"post_std_{k}"] = float(np.std(x))                  # 事後分布そのものの幅
+        out[f"post_skew_{k}"] = float(stats.skew(x))             # 3次：左右非対称
+        out[f"post_kurt_{k}"] = float(stats.kurtosis(x))         # 4次：裾の重さ（ガウスなら0）
+    c = post[FREE].corr().values                                  # パラメータ間の相関係数
+    for i in range(len(FREE)):
+        for j in range(i + 1, len(FREE)):
+            out[f"post_corr_{FREE[i]}__{FREE[j]}"] = float(c[i, j])
+    return out
+
 
 FREE = ["chirp_mass", "mass_ratio", "luminosity_distance", "theta_jn"]
 FBAND = (30.0, 60.0)    # 信号がSNRを稼ぐ帯域で非ガウス性を平均する
@@ -47,7 +71,7 @@ XLABEL = {
 }
 
 
-def load_runs():
+def load_runs(with_posterior=False):
     rows = []
     for fn in glob.glob("campaign/*/*/w*/summary.json"):
         s = json.load(open(fn))
@@ -59,9 +83,12 @@ def load_runs():
             r[f"p_{k}"] = s[k]["p"]
             r[f"in90_{k}"] = s[k]["in90"]
             r[f"w90_{k}"] = s[k]["width90"]
+        r.update({f"inj_{k}": v for k, v in s.get("injection", {}).items()})   # 注入した真の値
         r.update({f"deg_{k}": v for k, v in s["degeneracy"].items()})
         r["n_hit"] = s["contamination"]["n_hit"]
         r["n_windows"] = s["contamination"]["n_windows"]
+        if with_posterior:
+            r.update(posterior_stats(os.path.dirname(fn)))
         rows.append(r)
     return pd.DataFrame(rows)
 
@@ -209,8 +236,10 @@ def main():
     ap.add_argument("--y", choices=list(YDEF), default="ratio")
     ap.add_argument("--ref", default="gauss", help="基準 (A)")
     ap.add_argument("--cmp", default="real", help="比べる側 (B)")
+    ap.add_argument("--posterior", action="store_true",
+                    help="結果ファイルから事後分布の統計量も計算する（時間がかかる）")
     a = ap.parse_args()
-    df = pd.read_csv("campaign_all.csv") if a.from_csv else load_runs()
+    df = pd.read_csv("campaign_all.csv") if a.from_csv else load_runs(a.posterior)
     if not a.from_csv:
         df.to_csv("campaign_all.csv", index=False)
     s = summarize(df, a.ref, a.cmp)
